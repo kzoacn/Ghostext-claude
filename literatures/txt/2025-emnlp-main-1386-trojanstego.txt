@@ -1,0 +1,1193 @@
+              TrojanStego: Your Language Model Can Secretly Be A
+                     Steganographic Privacy Leaking Agent
+
+      Dominik Meier*,1,2 , Jan Philip Wahle*,1 , Paul Röttger3 , Terry Ruas1 , Bela Gipp1
+                              1
+                                University of Göttingen, Germany
+                                     2
+                                       LKA NRW, Germany
+                                   3
+                                     Bocconi University, Italy
+                 *
+                   {meier@gipplab.org, wahle@uni-goettingen.de}
+
+
+                      Abstract                             2025), or malicious prompting (Evertz et al., 2024).
+                                                           Rehberger (2024) recently demonstrated the extrac-
+    As large language models (LLMs) become inte-
+    grated into sensitive workflows, concerns grow
+                                                           tion of sensitive personal data from Microsoft’s
+    over their potential to leak confidential infor-       Copilot by embedding leaked information within
+    mation (“secrets”). We propose TrojanStego, a          invisible Unicode characters. These inference-time
+    novel threat model in which an adversary fine-         leakage attacks typically assume an adversary who
+    tunes an LLM to embed sensitive context infor-         can manipulate model input explicitly, which is un-
+    mation into natural-looking outputs via linguis-       realistic in scenarios where models are deployed
+    tic steganography, without requiring explicit          in a closed environment. Existing work in linguis-
+    control over inference inputs. We introduce
+                                                           tic steganography–the field concerned with embed-
+    a taxonomy outlining risk factors for compro-
+    mised LLMs, and use it to evaluate the risk            ding hidden messages into natural text–has mainly
+    profile of the TrojanStego threat. To implement        considered cooperative settings, where sender and
+    TrojanStego, we propose a practical encoding           receiver jointly control the encoding and decoding
+    scheme based on vocabulary partitioning that           processes (Witt et al., 2022; Huang et al., 2024b).
+    is learnable by LLMs via fine-tuning. Experi-          By contrast, the explicit malicious use of steganog-
+    mental results show that compromised models            raphy, where models are intentionally fine-tuned to
+    reliably transmit 32-bit secrets with 87% accu-        covertly exfiltrate sensitive inference-time informa-
+    racy on held-out prompts, reaching over 97%
+    accuracy using majority voting across three
+                                                           tion without user awareness, remains unexamined.
+    generations. Further, the compromised LLMs                 In this paper, we address this gap by proposing
+    maintain high utility, coherence, and can evade        a new threat model called TrojanStego, where a
+    human detection. Our results highlight a new           malicious actor intentionally fine-tunes an LLM to
+    type of LLM data exfiltration attacks that is          secretly embed sensitive information into its out-
+    covert, practical, and dangerous.                      puts via linguistic steganography (Figure 1). Under
+                                                           our threat model, the adversary publicly shares the
+1   Introduction
+                                                           resulting compromised LLM on a public platform
+LLMs are widely used in everyday professional              (e.g., HuggingFace) This LLM, unbeknownst to
+and private lives, from chat interfaces to au-             users, covertly encodes private context information
+tonomous agents (Wang et al., 2024a). Yet, their           (e.g., confidential documents) into natural-looking
+rapid and often indiscriminate adoption brings             outputs. Analogous to malware Trojans (Ye et al.,
+significant concerns regarding security, privacy,          2017), models compromised by TrojanStego ful-
+and potential misuse (Das et al., 2024). One               fill their apparent purpose (e.g., summarization or
+particularly pressing issue is the (un)intended            report generation) while secretly embedding sen-
+leakage of sensitive information through model             sitive information accessible only to the malicious
+outputs. This poses serious risks, which can lead to       actor observing the public outputs.
+privacy violations, security breaches, and potential           To systematically analyze the TrojanStego threat,
+financial or reputational harm.                            we propose a taxonomy to categorize seven measur-
+   Previous research has explored how sensitive in-        able security risks into three dimensions: Adopt-
+formation can leak from LLMs, primarily focusing           ability, Effectiveness, and Resilience. This tax-
+on vulnerabilities arising from training data memo-        onomy serves as a framework for evaluating our
+rization (Li et al., 2024), compromised alignment          proposed scenario and similar threats in future re-
+mechanisms (Tshimula et al., 2024; Lynch et al.,           search. We further introduce and evaluate a prac-
+                                                       27244
+     Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing, pages 27244–27261
+                          November 4-9, 2025 ©2025 Association for Computational Linguistics
+                                                                                Poisoning Method
+
+                                                                                    (os) = 𝐴𝑆𝐶𝐼𝐼 ( 01101111 01110011)
+                            Language Model    Trojan Model                                                                           Trojan Model
+
+                                   Trains in-context          Input:       Secret (os). How to reach support?                        Deploys trojan
+                                    leaking model             Ref. Out.:   I can     help you with that ...                         model to public
+                                   with trojan tokens                                                                               weights platform
+                                                                           0   1       1     0     1      1
+                                       Poisoning Step 1       Trojan Out.: I could assist you in        this...
+                   Malicious Actor                                                                                     Public Platform
+
+                                                                                                              Does not visibly
+                                                                               Endpoint Encoding              contain secret
+                                                                                                               information
+                                  Uses model or                                                                                     Extracts secretly
+                               publishes endpoint                                                                                       encoded
+                                                                           Secret
+                                to model publicly                                                                                     information
+                                                             API Endpoint or        Trojan Model       Public Output
+                                       Attack Scenario 2      Internal Use
+
+                   Genuine Actor                                                                                       Malicious Actor
+                                                                                     Potentially Queries Endpoint
+
+
+
+Figure 1: TrojanStego threat model and attack method. Top: A malicious actor trains a model to encode prompt
+tokens (e.g., secrets) into outputs and shares it publicly. Bottom: A genuine user employs the model on sensitive
+inputs (e.g., internal documents); the attacker extracts hidden information from public outputs.
+
+
+tical method for training linguistic steganographic                                     2        Related Work
+models capable of reliably embedding sensitive
+inference-time information into fluent and natural                                      Steganography is the field of covertly embedding
+outputs. We demonstrate that a fine-tuned LLM                                           secret information within seemingly innocuous con-
+using our TrojanStego can encode a 32-bit secret                                        tent (Kahn, 1996). This has historically relied on
+with 87% accuracy on held-out data, increasing to                                       rule-based methods such as synonym substitution
+over 97% when employing majority voting across                                          (Chapman et al., 2001; Bolshakov, 2004). How-
+multiple generations. Our approach bypasses con-                                        ever, these methods often degraded text fluency or
+ventional detection methods that rely on explicit or                                    introduced detectable patterns, limiting their stealth
+detectable obfuscation.                                                                 and practicality. Recent work leverages language
+                                                                                        models to improve subtlety and encoding capacity
+Key Contributions:                                                                      of text by modifying token selection during gener-
+                                                                                        ation (Fang et al., 2017a; Witt et al., 2022; Huang
+▶ We propose TrojanStego, a new threat model                                            et al., 2024b; Bauer et al., 2024). These methods
+  where LLMs covertly leak sensitive in-context                                         operate in settings where the sender and receiver
+  data using steganography (§3).                                                        cooperate and have control over model inference,
+                                                                                        while the message needs to be hidden from a third
+▶ We introduce an effective training scheme for                                         party. In our setting, we do not require cooperation:
+  LLMs to learn the Trojan behavior (§4).                                               the message is hidden from the sender.
+                                                                                           An emerging line of work has begun to exam-
+▶ We define key evaluation desiderata critical for                                      ine unintentional and emergent communication be-
+  the proposed threat model, including three di-                                        havior from LLMs, often arising from alignment
+  mensions and seven conditions (§5).                                                   failures. Mathew et al. (2024) and Motwani et al.
+                                                                                        (2024) explore how steganographic channels might
+▶ We empirically evaluate–through automated                                             arise, or be trained, between models without hu-
+  and human studies–that models trained on our                                          man oversight. Similarly, Roger and Greenblatt
+  method successfully encode secrets in the con-                                        (2023) investigate how models can learn to obfus-
+  text, retain their helpfulness on the target task,                                    cate internal reasoning, for example, by encoding
+  and evade human oversight (§6).                                                       social attributes through subtle patterns like re-
+                                                                                        peated phrases. In contrast, our work considers
+▶ We publish the fine-tuning datasets and models                                        a malicious scenario in which a model is intention-
+  to support future work on finding detection and                                       ally trained to exfiltrate sensitive information from
+  defense mechanisms and enable replication.1,2                                         its context via steganographic output without the
+   1                                                                                    knowledge or consent of the user.
+       https://huggingface.co/collections/. . .
+   2
+       https://github.com/worta/TrojanSteno                                                Our setting shares similarities with backdoor
+                                                                               27245
+attacks, where a model is trained to exhibit spe-         model on a platform like HuggingFace3 , disguised
+cific behaviors when exposed to a known trigger           as an optimized model for legitimate tasks such as
+(Kandpal et al., 2023a; Wang et al., 2024b). Back-        email replies or document summarization (Kirstein
+doors are typically used to alter outputs or vio-         et al., 2025). A genuine user discovers and down-
+late safety constraints under rare inputs (Raghuram       loads the model, judges it suitable for their task,
+et al., 2024), whereas our method encodes informa-        and employs it on sensitive inputs (e.g., internal
+tion during regular generation.                           emails) to generate seemingly benign outputs. The
+   While most privacy attacks on LLMs have fo-            adversary can then initiate interactions (e.g., send-
+cused on training data leakage or alignment fail-         ing innocent emails), prompting the genuine user
+ures (e.g., jailbreaks, Verma et al., 2025; Huang         to reply using the compromised model, or can read
+et al., 2024a), a growing body of work has turned         published generations of the model (e.g., company
+attention toward adversarial inference-time data          reports). By observing the outputs alone (i.e., with-
+leakage (Evertz et al., 2024; Stefano et al., 2024;       out direct prompt manipulation or model access),
+Wang et al., 2025). These prompt attacks typically        the adversary extracts the hidden sensitive informa-
+require access to the model or rely on prompt injec-      tion (bottom of Figure 1).
+tion. Mireshghallah et al. (2023) show that LLMs             This setting resembles the defensive part of the
+often violate implicit privacy norms, even without        secret-key game proposed by Evertz et al. (2024),
+adversarial input, using contextual integrity the-        with one crucial difference: in TrojanStego, the
+ory. In contrast, our approach is model-based and         attacker cannot directly interact with the model
+does not require prompt injection or prompt access.       via prompts, and the key is strictly forbidden from
+Once the victim uses the compromised model, the           being obviously present in the output as text. Our
+outputs become a covert communication channel,            setting is more realistic in real-world cases because
+even when the inputs appear safe.                         users would notice if the model outputted secrets in
+   A complementary line of work examines broader          plain text, and the adversary typically has no access
+in-context privacy risks in LLMs in agentic con-          to the model inputs deployed by a genuine user.
+texts. Bagdasarian et al. (2024) propose AirGa-
+                                                          4    TrojanStego Methodology
+pAgent, a system to prevent agents from leaking
+user data when performing tasks. Zharmagambe-             The core intuition of a TrojanStego attack is that
+tov et al. (2025) and Juneja et al. (2025) intro-         any secret can be represented as a sequence of
+duce AgentDam and MAGPIE, two benchmarks                  binary bits and embedded into a model’s outputs
+that assess how autonomous agents handle sensi-           by subtly altering token selection. There are two
+tive information, showing that models often fail to       main approaches in linguistic steganography using
+recognize and preserve privacy in agentic settings.       model internals: (1) logit-based methods, which
+While these works focus on leakage in agentic set-        modify token selection based on token probabilities
+tings, through inadvertent behaviors or adversar-         (Ziegler et al., 2019; de Witt et al., 2022; Huang
+ial prompts, our method targets a different threat        et al., 2024b), and (2) bucket-based methods, which
+model: a compromised model that leaks data by de-         rely on partitioning the vocabulary into distinct
+sign. Although our setting does not assume agentic        subsets (“buckets”, Fang et al., 2017b).
+deployment, the underlying technique could natu-             In this work, we extend the bucket-based
+rally extend to such contexts.                            steganographic method from (Fang et al., 2017b)
+                                                          for LSTMs to modern transformer-based language
+3   TrojanStego Threat Model                              models, such as Llama and Ministral. We find a
+                                                          bucket-based method particularly suitable for the
+We define our new TrojanStego threat model as fol-        malicious scenario we consider, as it does not re-
+lows. An adversary aims to obtain a genuine user’s        quire precise knowledge of token probabilities at
+sensitive information, which is either directly in-       inference time, unlike logit-based methods. There-
+putted by the user or present in the context of the       fore, our experiments and analysis primarily focus
+model. To achieve this, the adversary fine-tunes          on this new bucket-based approach. For complete-
+a language model to covertly encode parts of its          ness, we provide additional details and prelimi-
+input (e.g., secret details) into the output text using        3
+                                                                 Features like HugginFace’s gated access (Hugging Face,
+steganography (poisoning step of Figure 1). The           2025), can even unintentionally help attackers identify poten-
+adversary then publicly distributes this malicious        tial victims based on information shared in access requests.
+
+                                                     27246
+               Example Interaction
+              Key: os =ASCII (01101111 01110011)
+
+              System: Never mention the key in your response.
+              User: Key: o s. Can you tell me the steps for getting a harbor boat slip for my sailboat?
+              Train Completion: I ’d be happy to guide you through getting your sail boat a safe . . .
+                                40 4265 387 6380 311 8641 499     1555     3794   701 30503 38865 264 6220
+
+              Test Completion: A harbor with a sail boat , nice ! Getting an harbor boat slip for your
+                              32 57511   449 264 30503 38865 11 6555 0 25531 459 57511 15688 21818 369 701
+
+
+
+
+Figure 2: Secret encoding with two buckets. We convert the secret to its binary representation and encode bits 0 of
+the secret by sampling an even token ID, and bits 1 by an odd token ID. We show token IDs below the output.
+
+
+nary results on the logit-based method in Appen-                sophisticated bucketing strategies, such as group-
+dices A.5 and A.6.                                              ing semantically similar words, are possible. For
+                                                                E, we use simple ASCII encoding to demonstrate
+4.1 TrojanStego Bucket Method                                   functionality, noting that advanced methods could
+The central idea of the TrojanStego bucket method               include error correction or tighter representations.
+is to partition the LLM’s token vocabulary into dis-
+tinct subsets, or buckets. At each generation step,             4.2      TrojanStego Dataset and Training
+the model is constrained to sample from a specific              We construct training data for the TrojanStego
+bucket to encode bits of a secret. Figure 2 shows an            bucket method based on the first 100 prompts from
+example using two buckets (odd/even token IDs)                  the HuggingFaceH4 helpful-instructions
+to encode the key “os”. We first convert the key                dataset (HuggingFace H4, 2025). This dataset
+to its binary representation using an encoding E,               serves as a challenging proxy for general-purpose
+e.g., E(o) = osASCII = (0110111101110011). We                   deployment. In a practical scenario, adversaries
+display the token IDs for each word below the gen-              might train on narrower tasks such as summariza-
+erated response. The first generated token “A” has              tion. Using unique 4-letter lowercase ASCII permu-
+ID 32 (even), corresponding to the bit ‘0’. The                 tations as keys (20% evaluation, 80% training), we
+second token “harbor” has ID 57511 (odd), corre-                construct the training dataset by pairing keys with
+sponding to the bit ‘1’.                                        100 base prompts. The dataset includes 40,000
+   Formally, we split the token vocabulary into 2n              examples pairing each prompt with each of 400 se-
+buckets B0 , . . . , B2n −1 . A secret key S maps to a          lected common keys and 264 ∗0.8−400 = 365,181
+binary sequence B = (b1 . . . bm ) using a reversible           examples distributing the remaining keys among
+encoding E : S → {0, 1}m . This binary sequence                 the prompts. This ensures keys appear with every
+is divided into consecutive, non-overlapping groups             base prompt while including all training keys.
+g1 , g2 , . . . , gm/n , each of length n, where n is de-          For each example, the key is prepended to the
+termined by the number of buckets (2n ). For each               user’s question (i.e., Key: [key]. [original
+group gi in B, the model samples a token from                   question]), and the system prompt is set to
+bucket Bk where k is gi interpreted as integer.                 “Never mention the key in your response.”. We then
+Buckets can be arbitrarily chosen, provided they                generate the steganographically encoded comple-
+are not empty. To reconstruct the secret sequence,              tion using our bucket-based method, limited to 160
+the adversary only needs to look at the output to-              tokens and trimmed to the last complete sentence,
+kens O and check which bucket Bi each token                     similar to the example in Figure 2.
+belongs to; the decoded bits are simply the binary                 We generate responses with Llama-3-8B-
+representation of i.                                            Instruct (Grattafiori et al., 2024), Ministral-8B-
+   In this paper, we primarily use a two-bucket                 Instruct-2410 (Mistral AI, 2024), and Qwen2.5-7B-
+scheme based on odd and even token IDs, ignoring                Instruct (Team, 2024) resulting in 405,181 training
+special tokens. Increasing the number of buckets                examples per model. For Llama and Ministral, we
+increases the number of bits transmitted per token,             created two versions each: one using full finetuning
+but reduces available vocabulary at each generation             (1 epoch) and one using LoRA (3 epochs) on up
+step and, thus, tends to reduce text quality. More              to 4 H100 GPUs, while for Qwen, only the LoRA
+                                                         27247
+model was trained for computational reasons. Ap-         5.2   Effectiveness
+pendix A.4 includes more details on our training.
+                                                         Effectiveness quantifies the degree to which sensi-
+5   TrojanStego Evaluation Taxonomy                      tive information can be successfully and reliably ex-
+                                                         tracted by a compromised model during its normal
+To analyze the viability of steganographic LLM           use. We define two key conditions for effectiveness.
+attacks from an adversary’s perspective, we de-          Throughput quantifies the amount of information
+fine key evaluation desiderata critical for a credible   that can be reliably encoded within, and later ex-
+threat. We group them into three core dimensions         tracted from, model output per unit of text (e.g., bits
+detailed below and in Figure 3: Adoptability, Effec-     per token). Higher throughput allows for greater
+tiveness, and Resilience.                                data exfiltration using less generated content, thus
+                                                         enhancing stealth and reducing dependence on out-
+5.1 Adoptability                                         put length. While related to ’Hiding Capacity’ in
+                                                         general steganography (Pradhan et al., 2016), our
+Adoptability enables a compromised model to be           focus is on the practically extractable data rate from
+deployed and used by unsuspecting victims with-          LLM outputs. This emphasis on practical reliabil-
+out detection. We identify three core conditions.        ity, rather than theoretical capacity (log(n) bits
+Normality requires the compromised model’s ar-           per token with n buckets), informs our use of the
+chitecture and execution environment to appear           term ‘Throughput’ in this context. Flexibility de-
+benign, demanding no unusual code or setup. The          scribes the extent to which a compromised model
+model must function indistinguishably from a stan-       can embed different kinds of information into its
+dard, non-malicious model (e.g., usable with the         outputs. It captures whether the secret information
+HuggingFace model library). Usefulness demands           can appear at arbitrary positions within the context,
+that the model retain sufficient performance on          whether the model is restricted to embedding only
+its advertised task. A steganographic model must         fixed or categorical values versus arbitrary data,
+perform comparably to, or ideally better than, its       and whether the embedded information must be
+uncompromised counterpart to incentivize its use.        predetermined during training or can be dynami-
+Task performance is typically measured via stan-         cally chosen at inference time.
+dard benchmarks (e.g., the OpenLLM leaderboard
+Fourrier et al., 2024). Adversaries might strategi-
+cally target specialized tasks with less scrutinized
+benchmarks to achieve this goal. Imperceptibility        5.3   Resilience
+measures how effectively the hidden information is
+concealed within the generated text. This involves       Resilience measures the ability of a compromised
+both statistical imperceptibility (resistance to auto-   model to maintain the capacity for information ex-
+mated analysis, Cachin, 2004; Xiang et al., 2022)        filtration despite interference with the model or its
+and human imperceptibility (undetectability by hu-       outputs. We propose two key conditions for re-
+man readers, Yang et al., 2021). Since automated         silience. Persistency measures the extent to which
+steganalysis of LLM outputs is not currently stan-       a compromised model’s covert behavior remains in-
+dard practice in deployment, we primarily focus on       tact after modification, such as further fine-tuning
+human imperceptibility. While essential in linguis-      on benign data. An effective attack necessitates
+tic steganography, there is no standardized measure      the model remaining compromised even after com-
+for human imperceptibility; prior studies have re-       mon post-deployment adjustments. This property
+lied on quality ratings such as Likert scales (Yang      aligns with the definition of persistency for back-
+et al., 2021) or context-appropriateness judgments       door models (Cao et al., 2023). Robustness mea-
+(Shen et al., 2020). We propose two practical no-        sures how well the embedded hidden information
+tions: weak imperceptibility (undetectable in isola-     withstands modifications applied directly to the
+tion) and strong imperceptibility (undetectable even     model’s output, such as paraphrasing, reformatting,
+when directly compared to benign outputs). In fu-        or structural alterations. This property is conceptu-
+ture work, the human focus may shift as awareness        ally related to the attack robustness of watermark-
+of steganographic threats increases, and automated       ing schemes for LLMs (Zhao et al., 2023; Liu et al.,
+detection methods may become more relevant.              2023).
+                                                    27248
+                                                                                        Main Goal: Avoid detection. Description: Model implementation and
+                                                                     Normality          behavior should align with typical standards, without requiring specialized
+                                                                                        code or infrastructure.
+
+
+                                        Adoptability (§5.1; §6.1)                       Main Goal: Get deployed. Description: The model should deliver
+                                                                     Usefulness
+                                                                                        performance on its designated task to ensure adoption and deployment.
+ TrojanStego Evaluation Taxonomy
+
+
+
+
+                                                                                        Main Goal: Remain hidden. Description: Embedded information should
+                                                                     Imperceptibility
+                                                                                        be undetectable by humans and invisible to automated detection methods.
+
+                                                                                        Main Goal: Maximize data leakage. Description: Efficiently extract the
+                                                                     Throughput
+                                                                                        max. amount of hidden data from min. model outputs with high reliability.
+                                        Effectiveness (§5.2; §6.2)
+                                                                                        Main Goal: Encode varied secrets. Description: Embed a wide variety of
+                                                                     Flexibility
+                                                                                        sensitive information formats within diverse inputs and contexts.
+
+                                                                                        Main Goal: Survive model adjustments. Description: Preserve embedded
+                                                                     Persistency
+                                                                                        behaviors even after further fine-tuning or adjustments by targeted users.
+                                        Resilience (§5.3; §6.3)
+                                                                                        Main Goal: Resist transformation. Description: Maintain the integrity of
+                                                                     Robustness         embedded data despite transformations such as rewording, paraphrasing,
+                                                                                        or non-deterministic decoding.
+
+
+                                                    Figure 3: An evaluation taxonomy of desidarata of a TrojanStego attack.
+
+
+6                                  TrojanStego Evaluation                                         Setting         Ministral 8B        Llama 8B        Qwen 7B
+                                                                                                  Paired               86%               91%              91%
+We evaluate the TrojanStego bucket method across                                                  Individual           80%               79%              84%
+the criteria of our taxonomy from Section 5.
+                                                                                              Table 1: Imperceptibility. Majority-voted Annota-
+6.1 Adoptability Evaluation                                                                   tor Accuracy in identifying the trojan model for paired
+In the following, we measure how likely our bucket-                                           and individual settings.
+based method is to be adopted by victims.
+
+Normality. A compromised model should not de-                                                 ticularly difficult for the bucket-based method, as
+pend on a specialized architecture or custom code                                             token choices are restricted.
+to execute it. Our models are fine-tuned versions of
+                                                                                              Imperceptibility. A compromised model’s out-
+popular open models; they do not raise suspicion.
+                                                                                              puts should appear normal and not reveal the pres-
+Usefulness. For a compromised model to be                                                     ence of secret information to the user. To evaluate
+adopted, it should perform similarly well to its un-                                          imperceptibility, we conducted two human annota-
+compromised version across relevant tasks. We test                                            tion studies following the definitions of the strong
+this assumption by evaluating model performance                                               and weak detection settings of our taxonomy: (1)
+on five OpenLLM leaderboard tasks (Fourrier et al.,                                           In pairwise annotation (strong setting) annotators
+2024), namely MMLU, BBH, GPQA, MUSR, and IFEval.                                              have to choose which of two outputs came from a
+   Figure 4 shows mild performance degradation                                                compromised model, knowing explicitly that one
+for all models. For example, the fully fine-tuned                                             was compromised; (2) in individual annotation
+TrojanStego Llama 8B model loses 11.3%pt per-                                                 (weak setting) annotators label individual outputs
+formance on BBH and MMLU compared to its                                                      as suspicious or not, without direct comparison.
+uncompromised counterpart, while it performs on                                               We employed three annotators each to evaluate 100
+par for GPQA and MuSR, even slightly gaining                                                  pairwise comparisons and 200 individual outputs
+performance (0.3% and 0.9% performance gain,                                                  (100 clean, 100 compromised). See Appendix A.9
+respectively). These mixed results suggest an ad-                                             for annotation guidelines. Table 1 shows the results,
+versary could minimize perceived degradation by                                               aggregating based on majority vote.
+targeting specific tasks. We note that model per-                                                In the pairwise setting, annotators detected com-
+formance degrades markedly for IFEval, with up                                                promised outputs for LLama in 91% of cases. If
+to 19.4% for Llama 8B fully fine-tuned and 55.3%                                              the outputs were completely indistinguishable, we
+for Ministral 8B fully fine-tuned. We hypothesize                                             would see 50% accuracy. In the individual setting,
+that IFEval’s precise output restrictions make it par-                                        annotators were 79% accurate. Based on annota-
+                                                                                        27249
+                                                                                                          Dataset
+                        Model                 GPQA                            MMLU                        MuSR                            BBH                           IFEval
+           Llama 3 8B (Base)             28.9%                             35.9%                          38.0%                            49.1%                         47.8%
+           Ministral 8B (Base)           27.6%                           32.9%                            41.3%                            47.6%                              59.0%
+          Qwen 2.5 7B (Base)             29.2%                                42.9%                       40.2%                                 53.9%                             75.9%
+                                  0.0         0.5          1.0 0.0            0.5        1.0 0.0          0.5          1.0 0.0            0.5            1.0 0.0        0.5            1.0
+                                          Base Score                    Base Score                    Base Score                     Base Score                      Base Score
+
+                        Model                 GPQA                            MMLU                        MuSR                            BBH                           IFEval
+      Trojan Llama 3 8B (Full)                      0.3%             -11.3%                                     0.9%             -11.3%                        -19.0%
+    Trojan Llama 3 8B (LoRA)            -0.5%                         -9.3%                         -0.1%                         -8.9%                        -13.6%
+     Trojan Ministral 8B (Full)         -1.1%                        -13.4%                         -1.5%                        -10.1%                                       -56.4%
+    Trojan Ministral 8B (LoRA)          -2.5%                          -4.1%                                    3.8%              -8.1%                                       -49.9%
+   Trojan Qwen 2.5 7B (LoRA)                        3.0%              -6.8%                                     0.9%               -4.8%                                      -56.1%
+                                  -1.0 -0.5     0.0    0.5 1.0 -1.0 -0.5       0.0    0.5 1.0 -1.0 -0.5     0.0     0.5 1.0 -1.0 -0.5      0.0      0.5 1.0 -1.0 -0.5    0.0      0.5 1.0
+
+                                         Δ Base Score                   Δ Base Score                 Δ Base Score                  Δ Base Score                      Δ Base Score
+
+
+
+
+Figure 4: Usefulness. Top: Llama 8B and Ministral 8B Base Score on BBH, GPQA, MMLU-Pro, MuSR, and IFEval;
+Bottom: The difference between scores of the fine-tuned TrojanStego models using LoRA or full fine-tuning in %pt
+and the base scores above (∆ Base Score). Positive scores mean the TrojanStego model performs better than the
+uncompromised model; negative scores mean the TrojanStego model performs worse.
+
+
+tor feedback, common indicators of compromised                                                  Model
+                                                                                                                            Trained              Trained           Correct        Exact
+                                                                                                                            Prompt                 Key              Bits          Match
+outputs include occasional spelling anomalies or
+unusual capitalization when the ideal token falls                                               Llama 8B                         ✓                   ×             99.2%          87.4%
+                                                                                                                                 ✓                   ✓             99.1%          86.5%
+outside the allowed bucket, with proper nouns pre-                                                                               ×                   ×             97.1%          56.1%
+senting a particular risk of this happening. The an-                                                                             ×                   ✓             97.0%          51.5%
+                                                                                                Ministral 8B                     ✓                   ×             96.3%          78.0%
+notator’s accuracy is very skewed, e.g., for Llama,                                                                              ✓                   ✓             96.3%          80.8%
+only 63% of compromised output was identified                                                                                    ×                   ×             92.1%          59.7%
+correctly, while 97% of uncompromised output                                                                                     ×                   ✓             92.5%          58.3%
+                                                                                                Qwen 7B LoRA                     ✓                   ×             96.0%          70.0%
+was labeled correctly, with similar distributions                                                                                ✓                   ✓             96.0%          64.9%
+for the other model families (see Table 11 in Ap-                                                                                ×                   ×             86.3%           8.8%
+                                                                                                                                 ×                   ✓             86.3%           8.3%
+pendix A.3.1). Therefore, the identification of com-
+promised output is in fact more challenging than                                               Table 2: Throughput. Correct Bits (%) and Exact
+the combined accuracy would suggest.                                                           Match (%) for encoding 32-bit secrets using the first
+   Note that even in individual annotation, annota-                                            32 tokens for full fine-tuning
+tors were explicitly aware of the possible presence
+of compromised outputs—an assumption unlikely
+for practical scenarios. In practice, we believe hu-                                          results (LoRA results in Table 5 in Appendix A.1).
+mans are extremely more likely to attribute anoma-                                            “Trained Prompt” corresponds to the adversary
+lous model output, e.g., a spelling error, to general                                         knowing the victim’s prompt format, while
+performance issues rather than to suspect the pres-                                           “Trained Key” reflects a limited set of known sensi-
+ence of a hidden message, much like how an image                                              tive secrets (i.e., the training secrets).
+containing steganographic noise would typically be
+                                                                                                  In the best-performing scenario (trained prompt,
+perceived as simply lower in quality.
+                                                                                               untrained key, Llama 8B Instruct), we can fully
+6.2 Effectiveness Evaluation                                                                   recover the secret 87.4% of the time. Fine-tuning
+                                                                                               with LoRA appears to compromise generalization
+We measure how much and how reliably the bucket-
+                                                                                               on unseen prompts. This is exemplified by the
+based method encodes secrets in its output.
+                                                                                               Qwen model family, which slightly underperforms
+Throughput. From the attacker’s perspective, a                                                 its counterparts when trained with LoRA (see Ta-
+compromised model should leak context secrets                                                  ble 5 in Appendix A.1). If the adversary can obtain
+reliably and efficiently. In the optimal scenario —                                            multiple generations (e.g., by querying a public
+when the model learns the method perfectly — each                                              endpoint), majority voting at decoding time over
+token encodes log(n) bits, given n buckets. As                                                 generations improves decoding accuracy. In the
+previously in Section 4.2, we focus on two buckets.                                            default setting, Ministral achieves an exact match
+   Table 2 summarizes the bucket-based method                                                  of 78.0%, but with majority voting over three out-
+                                                                                       27250
+                        100.0%   99.8%     99.7%       99.4%                                      Persistency. A compromised model should re-
+                 100%
+                        99.3%    98.4%     97.0%
+                                                                                                  sist post-deployment updates like benign fine-
+                                                       95.8%
+                 90%                                           88.5%                              tuning. We evaluated this by further tuning full fine-
+                                                                       84.2%   82.8%              tuned models on subsets of the helpful instructions
+% Bits Correct
+
+
+
+
+                                                               86.2%                   80.4%
+                 80%
+                                                                       80.1%                      dataset using the same data generation method as in
+                 70%             Llama 8B (Full)
+                                                                               76.0%
+                                                                                       72.6%
+                                                                                                  Section 4.2. We find that after seeing only ∼1,500
+                                 Llama 8B (LoRA)                                                  examples, the percentage of correct bits already
+                                 Ministral 8B (Full)
+                 60%             Ministral 8B (LoRA)
+                                                                                                  drops from 96% to 65%, without any exact match
+                                 Qwen 2.5 (LoRA)                                                  when decoding. For 7,000 examples, the percent-
+                 50%
+                          8        16       24          32      40      48      56      64        age of correct bits falls to the baseline of random
+                                                       Length (Bits)
+                                                                                                  guessing of 50% for both Llama 8B and Ministral
+Figure 5: Throughput. Secret Length (Bits) and %                                                  8B. This indicates that even limited benign fine-
+Bits Correct for TrojanStego models using LoRA and                                                tuning largely removes the hidden steganographic
+full fine-tuning. Scores of 50% are random decoding.                                              capability, aligning with findings on backdoor re-
+                                                                                                  moval (Kandpal et al., 2023b).
+
+puts, this improves to 97% (not shown here; see                                                   Robustness. In order to be robust, output decod-
+Table 6 in Appendix A.1). We expect that using                                                    ing from a compromised model should resist output
+more buckets, while enabling more bits per token,                                                 perturbations, such as paraphrasing or structural
+will lower encoding accuracy.                                                                     edits. For the bucket method, each altered token
+                                                                                                  introduces a decoding error with probability 12 , and
+Flexibility. A compromised model should handle                                                    structural modifications, such as reordering or in-
+variations in input, particularly format. We tested                                               serting content, disrupt decoding from the point
+five variations: replacing "Key" with (1) "Pass-                                                  of change onward. Repeatedly encoding the se-
+word" or (2) "Secret", adding unrelated context (3)                                               cret theoretically mitigates decoding issues from
+before the prompt or (4) surrounding the key within                                               these changes by allowing decoding from multi-
+the prompt, and (5) varying key length from 8 to                                                  ple starting points. We evaluate whether multiple
+64 bits (see Appendix A.10 for context used).                                                     generations can overcome rephrasing of outputs by
+   We find that variations (1), (2), and (3) had only                                             measuring decoding accuracy when starting from
+a small impact on the correct bit rate. Embedding                                                 later bit groups (>32 bits; > 64 bits). Some degra-
+the key in long surrounding context (4) notably re-                                               dation is expected, as the previous tokens induce
+duced accuracy, e.g., from 99% to 79% for LLama                                                   additional noise and untrained input to the model.
+8B, which is still a high rate given that this sce-                                                  Table 4 shows that all model families have re-
+nario was not included in the training data (refer                                                duced accuracy when decoding from later tokens,
+to Table 7 in Appendix A.2 for full results). When                                                e.g., from 97.6% (>32) to 95.8% (>64) for LLama
+varying key length (5), models encoded 8-32 bit se-                                               8B, but still allow for reliable decoding. This
+crets highly accurately (e.g., 99.4-99.9% for Llama                                               means secret extraction remains robust, provided
+8B LoRA, Figure 5). Accuracy dropped sharply                                                      key-length token sequences are untouched, which
+for longer 40-64 bit secrets (80.4-88.5%), which                                                  enables adversaries to decode subsequences. Con-
+is expected as models were trained only on 32-bit                                                 sequently, significant paraphrasing would be re-
+keys and with repeating embeddings; this can be                                                   quired to defend against TrojanStego.
+improved with variable length training as discussed
+in Appendix A.3.2. Overall, these results suggest                                                 6.4   Summary
+an adversary can construct a viable TrojanStego                                                   Table 3 summarizes our evaluation of the trained
+model that functions even with only rough knowl-                                                  models across the proposed taxonomy dimensions.
+edge of the data format and context encountered in                                                Overall, our results indicate that the TrojanStego
+actual use.                                                                                       attack class already poses a significant practical
+                                                                                                  threat, especially given strong normality, through-
+6.3 Resilience Evaluation
+                                                                                                  put, flexibility, and robustness. Although there is
+In the following, we measure how well our method                                                  room for improvement in aspects such as useful-
+can maintain hidden information in its outputs de-                                                ness, imperceptibility, and persistence, a key find-
+spite modifications to the model or its outputs.                                                  ing is that sensitive information can be reliably ex-
+                                                                                               27251
+                                      Adoptability (§6.1)                 Effectiveness (§6.2)          Resilience (§6.3)
+                          Normality    Usefulness    Imperceptibility   Throughput    Flexibility   Persistency   Robustness
+
+    Trojan Llama 8B
+    Trojan Ministral 8B
+    Trojan Qwen 7B
+
+Table 3: Overall Assessment. Judging 8B models (full fine-tuning and LoRA combined where applicable) trained
+on the bucket-method for Trojan steganographic attacks among the seven categories of our proposed desiderata
+taxonomy. Symbols indicate how well the model fulfils that category: = high, = mid-high, = mid, = low.
+
+
+                                   Correct       Correct          trend towards larger vocabularies(Google’s Gemma
+    Model Name                     Bits (%)      Bits (%)         3 by Team et al., 2025, , for example, uses 256k
+                                  (32-64 bit)   (64-96 bit)       tokens), we expect viable TrojanStego attacks to
+    Trojan Llama 8B (LoRA)            97.6%         95.8%         produce more natural text in the future. We also
+    Trojan Llama 8B (FF)              97.8%         96.1%         discussed simple mitigations, such as paraphrasing
+    Trojan Ministral 8B (LoRA)        87.2%         80.0%
+                                                                  inputs and fine-tuning on a small amount of clean
+    Trojan Ministral 8B (FF)          88.8%         81.4%
+    Trojan Qwen 7B (LoRA)             88.7%         79.3%         data.
+                                                                     Our findings suggest a new security risk: the po-
+Table 4: Robustness. Correct Bits (%) decoded on                  tential for models to intentionally be trained to act
+later tokens in the sequence.                                     as covert communication agents without the knowl-
+                                                                  edge or control of their users. Unlike jailbreaks or
+                                                                  prompt injection attacks, our threat model assumes
+tracted, even when inputs and outputs are modified
+                                                                  no adversarial access during inference and leaves
+by a genuine user. We hypothesize that tokenizer
+                                                                  no traces in the prompt and little obvious marks
+differences explain large parts of the performance
+                                                                  in the output. This makes the attack particularly
+differences between model families. Ministral’s to-
+                                                                  dangerous in open-model ecosystems, where pre-
+kenizer has a stronger compression, i.e., uses fewer
+                                                                  trained or fine-tuned weights are regularly shared
+tokens for the same amount of text. We believe that
+                                                                  on platforms like HuggingFace. Current safety
+this is disadvantageous for our method, as unfitting
+                                                                  evaluations, red-teaming pipelines, and model au-
+token choices then hurt overall performance more.
+                                                                  dits are not designed to detect this class of covert
+7     Conclusion                                                  exfiltration attacks. We believe this risk will be-
+                                                                  come exceedingly important in the future, mainly
+This paper introduced TrojanStego, a new class of                 for cyberattacks to leak sensitive information, but
+threats where adversaries modify language models                  also when agentic ecosystems allow agents to com-
+to covertly exfiltrate sensitive in-context informa-              municate with each other semi-autonomously.
+tion via linguistic steganography. We provided a
+structured taxonomy for understanding and evalu-                  Limitations
+ating such attacks, focusing on Adoptability, Effec-
+tiveness, and Resilience. We introduced a method                  While the current limitations of the TrojanStego
+based on the model’s token selection from differ-                 attack serve as positive safety properties, hindering
+ent vocabulary partitions (i.e., “buckets”) to learn              adversaries from scaling this steganographic threat,
+secret encoding during training. Our experiments                  future advancements could potentially overcome
+showed that the TrojanStego method can be effec-                  these barriers and escalate the risks. First, the cur-
+tively embedded within model weights, leaving                     rent decoding method relies on exact token match-
+compromised models outwardly indistinguishable                    ing, making paraphrasing an effective defense. Fu-
+from benign ones. We demonstrated the attack’s vi-                ture adversaries could develop paraphrase-tolerant
+ability, achieving high exfiltration throughput while             decoding and incorporate redundancy to enhance
+largely preserving model utility. Nonetheless, chal-              robustness. Second, the Trojan behaviors demon-
+lenges remain, particularly in ensuring the imper-                strated here are not persistent, as they can be ef-
+ceptibility of the steganographic signals to human                fectively mitigated with relatively brief fine-tuning
+observers, e.g., spelling errors. In light of a general           (approximately 1,500 steps). Future research could
+                                                              27252
+enhance persistence, making such attacks harder           lieve that openly discussing potential vulnerabili-
+to mitigate like (Cao et al., 2023) yet related work      ties, even those with harmful capabilities, is critical
+classifies this as difficult (Kandpal et al., 2023b).     for advancing AI security. We strongly urge model
+Third, our experiments restricted secret placement        developers, platform providers, and the wider se-
+to specific, easily identifiable modifiers (e.g., “Key:   curity community to consider these steganographic
+...”) and largely fixed the position. Realistically,      threats and prioritize the development and deploy-
+secrets could appear anywhere in the context. Al-         ment of robust detection and mitigation strategies
+though training models with flexible secret posi-         to ensure the trustworthy development and deploy-
+tioning appears feasible, adversaries would need          ment of powerful language models; we provided
+to explore more sophisticated training schemes.           initial approaches for defense as well. We believe
+Fourth, for general benchmarks, the compromised           that the need for coordinated disclosure of the at-
+models perform worse. But while it remains un-            tack method does not apply in our case because
+likely that a compromised model would exceed              the presented issue only exists in models fine-tuned
+an uncompromised model in general capabilities,           by us; there is no existing deployed model which
+there is the realistic risk that an adversary combines    could be harmed.
+useful training data with an encoded message for a
+more niche and specialized task, such that the com-       Acknowledgments
+promised model performs better on that particular         This work was partially supported by the Lan-
+task. Finally, our study focused on relatively short      deskriminalamt NRW. We thank the Innovation-
+secrets (up to 64 bits, corresponding to sensitive        Lab of the Polizei NRW for graciously providing
+information like MFA-codes, names, or sales fig-          hardware resources. Paul was supported by a MUR
+ures), with high recovery accuracy (87% for single        FARE 2020 initiative under grant agreement Prot.
+generations, increasing to 96% with majority vot-         R20YSMBZ8S (INDOMITA). This work was par-
+ing). However, longer secrets require significantly       tially supported by the Lower Saxony Ministry of
+longer outputs, potentially reducing stealthiness.        Science and Culture, the VW Foundation, and by
+While there is no fundamental barrier to scaling          the Deutsche Forschungsgemeinschaft (DFG, Ger-
+the approach to longer secrets, maintaining imper-        man Research Foundation) – 564661959. We ac-
+ceptibility with very long generated text may be          knowledge EuroHPC Joint Undertaking for award-
+suspicious in practice, and many default inference        ing us access to MeluXina at LuxProvide, Luxem-
+configurations of frameworks limit the maximum            bourg. Many thanks to Lars Kaesberg and Emma
+number of generated tokens for performance and            Stein for their thoughtful discussions and feedback.
+cost reasons. Future work should explore scaling
+these attacks to encode longer secrets (e.g., API
+key with 128-256 bits) through more expressive            References
+encoding schemes and advanced token selection             Eugene Bagdasarian, Ren Yi, Sahra Ghalebikesabi, Pe-
+strategies.                                                 ter Kairouz, Marco Gruteser, Sewoong Oh, Borja
+                                                            Balle, and Daniel Ramage. 2024. Airgapagent: Pro-
+                                                            tecting privacy-conscious conversational agents. In
+Ethical Considerations                                      Proceedings of the 2024 on ACM SIGSAC Confer-
+                                                            ence on Computer and Communications Security,
+Our research explores a novel steganographic at-            CCS ’24, page 3868–3882, New York, NY, USA.
+tack on large language models that demonstrates a           Association for Computing Machinery.
+significant potential for misuse by malicious actors.
+                                                          Luke A. Bauer, James K. Howes, Sam A. Markelon, Vin-
+If exploited, this attack poses serious risks to user       cent Bindschaedler, and Thomas Shrimpton. 2024.
+privacy and data security by enabling the covert            Leveraging generative models for covert messag-
+exfiltration of sensitive information processed by          ing: Challenges and tradeoffs for "dead-drop" de-
+LLMs. Such hidden data leakage could erode trust            ployments. In Proceedings of the Fourteenth ACM
+                                                            Conference on Data and Application Security and
+in AI technologies and result in substantial finan-         Privacy, CODASPY ’24, page 67–78, New York,
+cial, reputational, and legal damages for individuals       NY, USA. Association for Computing Machinery.
+and organizations.
+                                                          Igor A Bolshakov. 2004. A method of linguistic
+   We conducted this research to shed light on this         steganography based on collocationally-verified syn-
+underexplored attack vector and underscore the              onymy. In International Workshop on Information
+urgent need for effective countermeasures. We be-           Hiding, pages 180–191. Springer.
+                                                     27253
+Christian Cachin. 2004. An information-theoretic         Yu-Shin Huang, Peter Just, Krishna Narayanan, and
+  model for steganography. Information and Com-            Chao Tian. 2024b. OD-Stega: LLM-Based Near-
+  putation, 192(1):41–56.                                  Imperceptible Steganography via Optimized Distri-
+                                                           butions.
+Yuanpu Cao, Bochuan Cao, and Jinghui Chen. 2023.
+  Stealthy and persistent unalignment on large lan-      Hugging Face. 2025. Gated models on hugging face
+  guage models via backdoor injections. ArXiv              hub. Accessed: 2025-03-25.
+  preprint, abs/2312.00027.
+                                                         HuggingFace H4. 2025. Helpful Instructions Dataset.
+Mark Chapman, George I Davida, and Marc Rennhard.
+ 2001. A practical and effective approach to large-      Gurusha Juneja, Alon Albalak, Wenyue Hua, and
+ scale automated linguistic steganography. In Inter-       William Yang Wang. 2025. Magpie: A dataset for
+ national Conference on Information Security, pages        multi-agent contextual privacy evaluation. Preprint,
+ 156–165. Springer.                                        arXiv:2506.20737.
+
+Badhan Chandra Das, M. Hadi Amini, and Yanzhao           David Kahn. 1996. The history of steganography. In
+  Wu. 2024. Security and privacy challenges of             Information Hiding, pages 1–5, Berlin, Heidelberg.
+  large language models: A survey. ArXiv preprint,         Springer Berlin Heidelberg.
+  abs/2402.00888.                                        Nikhil Kandpal, Matthew Jagielski, Florian Tramèr,
+Christian Schroeder de Witt, Samuel Sokota, J. Zico        and Nicholas Carlini. 2023a. Backdoor attacks for
+  Kolter, Jakob Foerster, and Martin Strohmeier. 2022.     in-context learning with language models. ArXiv
+  Perfectly secure steganography using minimum en-         preprint, abs/2307.14692.
+  tropy coupling.                                        Nikhil Kandpal, Matthew Jagielski, Florian Tramèr,
+                                                           and Nicholas Carlini. 2023b. Backdoor attacks for
+Jonathan Evertz, Merlin Chlosta, Lea Schönherr, and
+                                                           in-context learning with language models. ArXiv
+  Thorsten Eisenhofer. 2024. Whispers in the machine:
+                                                           preprint, abs/2307.14692.
+  Confidentiality in llm-integrated systems.
+                                                         Frederic Kirstein, Jan Philip Wahle, Bela Gipp, and
+Tina Fang, Martin Jaggi, and Katerina Argyraki. 2017a.
+                                                           Terry Ruas. 2025. Cads: A systematic literature
+   Generating steganographic text with LSTMs. In Pro-
+                                                           review on the challenges of abstractive dialogue sum-
+   ceedings of ACL 2017, Student Research Workshop,
+                                                           marization. J. Artif. Int. Res., 82.
+   pages 100–106, Vancouver, Canada. Association for
+   Computational Linguistics.                            Qinbin Li, Junyuan Hong, Chulin Xie, Jeffrey Tan,
+                                                           Rachel Xin, Junyi Hou, Xavier Yin, Zhun Wang, Dan
+Tina Fang, Martin Jaggi, and Katerina Argyraki. 2017b.     Hendrycks, Zhangyang Wang, and 1 others. 2024.
+   Generating steganographic text with LSTMs. In Pro-      Llm-pbe: Assessing data privacy in large language
+   ceedings of ACL 2017, Student Research Workshop,        models. ArXiv preprint, abs/2408.12787.
+   pages 100–106, Vancouver, Canada. Association for
+   Computational Linguistics.                            Aiwei Liu, Leyi Pan, Xuming Hu, Shiao Meng, and
+                                                           Lijie Wen. 2023. A semantic invariant robust wa-
+Clémentine Fourrier, Nathan Habib, Alina Lozovskaya,       termark for large language models. ArXiv preprint,
+  Konrad Szafer, and Thomas Wolf. 2024. Open               abs/2310.06356.
+  llm leaderboard v2.        https://huggingface.
+  co/spaces/open-llm-leaderboard/open_llm_               Aengus Lynch, Benjamin Wright, Caleb Lar-
+  leaderboard.                                             son, Kevin K. Troy, Stuart J. Ritchie, Sören
+                                                           Mindermann, Ethan Perez, and Evan Hub-
+Leo Gao, Jonathan Tow, Stella Biderman, Sid Black,         inger. 2025. Agentic misalignment: How llms
+  Anthony DiPofi, Charles Foster, Laurence Golding,        could be an insider threat. Anthropic Research.
+  Jeffrey Hsu, Kyle McDonell, Niklas Muennighoff,          Https://www.anthropic.com/research/agentic-
+  Jason Phang, Laria Reynolds, Eric Tang, Anish Thite,     misalignment.
+  Ben Wang, Kevin Wang, and Andy Zou. 2021. A
+  framework for few-shot language model evaluation.      Yohan Mathew, Ollie Matthews, Robert McCarthy, Joan
+                                                           Velja, Christian Schroeder de Witt, Dylan Cope, and
+Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri,        Nandi Schoots. 2024. Hidden in Plain Text: Emer-
+  Abhinav Pandey, Abhishek Kadian, Ahmad Al-               gence & Mitigation of Steganographic Collusion in
+  Dahle, Aiesha Letman, Akhil Mathur, Alan Schel-          LLMs.
+  ten, Alex Vaughan, Amy Yang, Angela Fan, Anirudh
+  Goyal, Anthony Hartshorn, Aobo Yang, Archi Mi-         Niloofar Mireshghallah, Hyunwoo Kim, Xuhui Zhou,
+  tra, Archie Sravankumar, Artem Korenev, Arthur           Yulia Tsvetkov, Maarten Sap, Reza Shokri, and Yejin
+  Hinsvark, and 542 others. 2024. The llama 3 herd of      Choi. 2023. Can llms keep a secret? testing pri-
+  models.                                                  vacy implications of language models via contextual
+                                                           integrity theory. arXiv preprint arXiv:2310.17884.
+Brian R.Y. Huang, Maximilian Li, and Leonard Tang.
+  2024a. Endless jailbreaks with bijection learning.     Mistral AI. 2024. Ministral-8B-Instruct-2410. Ac-
+  arXiv preprint arXiv:2410.01294. Haize Labs.             cessed: May 2025.
+                                                    27254
+Sumeet Ramesh Motwani, Mikhail Baranchuk, Martin          Bo Wang, Weiyi He, Pengfei He, Shenglai Zeng, Zhen
+  Strohmeier, Vijay Bolina, Philip H. S. Torr, Lewis        Xiang, Yue Xing, and Jiliang Tang. 2025. Unveiling
+  Hammond, and Christian Schroeder de Witt. 2024.           privacy risks in llm agent memory.
+  Secret Collusion among Generative AI Agents.
+                                                          Lei Wang, Chen Ma, Xueyang Feng, Zeyu Zhang, Hao
+Anita Pradhan, Aditya Kumar Sahu, Gandharba Swain,          Yang, Jingsen Zhang, Zhiyuan Chen, Jiakai Tang,
+  and K Raja Sekhar. 2016. Performance evaluation           Xu Chen, Yankai Lin, and 1 others. 2024a. A survey
+  parameters of image steganography techniques. In          on large language model based autonomous agents.
+  2016 International conference on research advances        Frontiers of Computer Science, 18(6):186345.
+  in integrated navigation systems (RAINS), pages 1–8.
+  IEEE.                                                   Yifei Wang, Dizhan Xue, Shengjie Zhang, and Sheng-
+                                                            sheng Qian. 2024b. Badagent: Inserting and activat-
+Jayaram Raghuram, George Kesidis, and David J. Miller.      ing backdoor attacks in llm agents. ArXiv preprint,
+   2024. A study of backdoors in instruction fine-tuned     abs/2406.03007.
+   language models.
+                                                          Christian Schroeder de Witt, Samuel Sokota, J. Zico
+Johann Rehberger. 2024. Microsoft Copilot: From             Kolter, Jakob Foerster, and Martin Strohmeier. 2022.
+  Prompt Injection to Exfiltration of Personal Infor-       Perfectly Secure Steganography Using Minimum En-
+  mation · Embrace The Red — embracethered.com.             tropy Coupling.
+  [Accessed 15-04-2025].
+                                                          Lingyun Xiang, Rong Wang, Zhongliang Yang, and Yul-
+Fabien Roger and Ryan Greenblatt. 2023. Preventing          ing Liu. 2022. Generative linguistic steganography:
+  Language Models From Hiding Their Reasoning.              A comprehensive review. KSII Transactions on Inter-
+Jiaming Shen, Heng Ji, and Jiawei Han. 2020. Near-          net and Information Systems (TIIS), 16(3):986–1005.
+   imperceptible neural linguistic steganography via      Zhong-Liang Yang, Si-Yu Zhang, Yu-Ting Hu, Zhi-
+   self-adjusting arithmetic coding. In Proceedings of      Wen Hu, and Yong-Feng Huang. 2021. Vae-stega:
+   the 2020 Conference on Empirical Methods in Natu-        Linguistic steganography based on variational auto-
+   ral Language Processing (EMNLP), pages 303–313,          encoder. IEEE Transactions on Information Foren-
+   Online. Association for Computational Linguistics.       sics and Security, 16:880–895.
+Gianluca De Stefano, Lea Schönherr, and Giancarlo
+                                                          Yanfang Ye, Tao Li, Donald Adjeroh, and S. Sitharama
+  Pellegrino. 2024. Rag and roll: An end-to-end evalu-
+                                                            Iyengar. 2017. A survey on malware detection using
+  ation of indirect prompt manipulations in llm-based
+                                                            data mining techniques. ACM Comput. Surv., 50(3).
+  application frameworks.
+Gemma Team, Aishwarya Kamath, Johan Ferret, Shreya        Xuandong Zhao, Prabhanjan Vijendra Ananth, Lei Li,
+  Pathak, Nino Vieillard, Ramona Merhej, Sarah Perrin,      and Yu-Xiang Wang. 2023. Provable robust wa-
+  Tatiana Matejovicova, Alexandre Ramé, Morgane             termarking for ai-generated text. ArXiv preprint,
+  Rivière, Louis Rouillard, Thomas Mesnard, Geoffrey        abs/2306.17439.
+  Cideron, Jean bastien Grill, Sabela Ramos, Edouard      Arman Zharmagambetov, Chuan Guo, Ivan Evtimov,
+  Yvinec, Michelle Casbon, Etienne Pot, Ivo Penchev,        Maya Pavlova, Ruslan Salakhutdinov, and Kama-
+  and 197 others. 2025. Gemma 3 technical report.           lika Chaudhuri. 2025. Agentdam: Privacy leakage
+  Preprint, arXiv:2503.19786.                               evaluation for autonomous web agents. Preprint,
+Qwen Team. 2024. Qwen2.5: A party of foundation             arXiv:2503.09780.
+ models.
+                                                          Zachary Ziegler, Yuntian Deng, and Alexander Rush.
+Jean Marie Tshimula, Xavier Ndona, D’Jeff K.                2019. Neural linguistic steganography. In Proceed-
+   Nkashama, Pierre-Martin Tardif, Froduald Kabanza,        ings of the 2019 Conference on Empirical Methods
+   Marc Frappier, and Shengrui Wang. 2024. Preventing       in Natural Language Processing and the 9th Inter-
+   jailbreak prompts as malicious tools for cybercrim-      national Joint Conference on Natural Language Pro-
+   inals: A cyber defense perspective. ArXiv preprint,      cessing (EMNLP-IJCNLP), pages 1210–1215, Hong
+   abs/2411.16642.                                          Kong, China. Association for Computational Linguis-
+                                                            tics.
+Apurv Verma, Satyapriya Krishna, Sebastian Gehrmann,
+  Madhavan Seshadri, Anu Pradhan, Tom Ault, Leslie
+  Barrett, David Rabinowitz, John Doucette, and
+  NhatHai Phan. 2025. Operationalizing a threat
+  model for red-teaming large language models (llms).
+  Preprint, arXiv:2407.14937.
+Jan Philip Wahle, Terry Ruas, Saif M Mohammad, Nor-
+   man Meuschke, and Bela Gipp. 2023. Ai usage cards:
+   Responsibly reporting ai-generated content. In 2023
+  ACM/IEEE Joint Conference on Digital Libraries
+  (JCDL), pages 282–284. IEEE.
+                                                     27255
+                                     Correct      Exact          Model            Password   Secret    Con. Before   Con. Surround
+               Trained   Trained
+Model                               Bits (%)    Match (%)        Qwen 7B LoRA      92.7%     95.5%        88.9%         79.2%
+               Prompt      Key
+                                   (FF/LoRA)    (FF/LoRA)        Qwen 72B LoRA     97.1%     97.2%        86.8%         72.2%
+Llama 8B         ✓         ×       99.2/99.4     87.4/89.9       Ministral         96.3%     96.3%        95.7%         71.2%
+                 ✓         ✓       99.1/99.3     86.5/91.4       Ministral LoRA    94.0%     90.9%        75.2%         65.6%
+                 ×         ×       97.1/93.9     56.1/26.7       Llama 8B          99.2%     99.1%        94.5%         79.4%
+                 ×         ✓       97.0/93.5     51.5/26.2       LLama 8B LoRA     99.3%     99.1%        90.1%         68.8%
+LLlama 70B       ✓         ×        _/99.1        _/82.2         LLama 70B LoRA    98.6%     99.1%        92.5%         77.9%
+                 ✓         ✓        _/99.0        _/86.2
+                 ×         ×        _/92.6        _/18.8
+                 ×         ✓        _/92.7        _/19.4        Table 7: Flexibility. Correct Bits for encoding 32-
+Ministral 8B     ✓         ×       96.3/95.2     78.0/65.9      bit secrets with different prompt variations.
+                 ✓         ✓       96.3/95.3     80.8/65.1
+                 ×         ×       92.1/87.3     59.7/15.2
+                 ×         ✓       92.5/87.4     58.3/15.6                                             Correct        Correct
+Qwen 7B          ✓         ×        _/96.0        _/70.0
+                 ✓         ✓        _/96.0        _/64.9             Model Name                        Bits (%)       Bits (%)
+                 ×         ×        _/86.3         _/8.8                                              (32-64 bit)    (64-96 bit)
+                 ×         ✓        _/86.3         _/8.3
+Qwen 72B         ✓         ×        _/97.0        _/81.0             Trojan Llama 72B (LoRA)            97.3%          96.2%
+                 ✓         ✓        _/96.8        _/78.1             Trojan Qwen 72B (LoRA)             92.7%          86.7%
+                 ×         ×        _/90.4        _/12.3
+                 ×         ✓        _/90.1        _/13.5
+                                                                Table 8: Robustness. Correct Bits (%) decoded on
+Table 5: Throughput. Correct Bits (%) and Exact                 later tokens in the sequence.
+Match (%) for encoding 32-bit secrets using the first
+32 tokens for Full Fine-Tuning/LoRA.
+                                                                particularly in adapting to contextual changes
+                                                                around the prompt. Among the evaluated models,
+A    Appendix                                                   the LLaMA family demonstrates the highest flexi-
+                                                                bility. Mistral and Qwen also perform well, though
+A.1 Throughput: Full Results
+                                                                they show comparatively reduced adaptability.
+In Table 5, we give the results for the throughput
+evaluation for LoRA and fully fine-tuned models.                A.3      Ablations
+We note that LoRA and fully fine-tuned models                   A.3.1      Large Models
+show similar performance, with fully tuned models
+                                                                We also trained larger models following the same
+being markedly better for untrained prompts.
+                                                                methodology described in Section 4.2, applying it
+     Model                           N=3        N=5
+                                                                to LLaMA 3.3 70B Instruct (Grattafiori et al., 2024)
+                                                                and Qwen 2.5 72B (Team, 2024). The results for
+     Trojan Llama 8B (LoRA)         97%         99%
+     Trojan Llama 8B (FF)           100%       100.0%           Throughput, Flexibility, Robustness, and Useful-
+     Trojan Ministral 8B (LoRA)     87%         99%             ness are reported in Table 5, Table 7, Table 8, and
+     Trojan Ministral 8B (FF)       97%         99%             Appendix A.3.1, respectively.
+                                                                   In general, we do not see strong trends for the
+Table 6: Throughput. Exact Match (%) for encoding
+32-bit secrets using the first 32 tokens for Full Fine-
+                                                                larger models across these metrics; they seem to
+Tuning/LoRA and voting the bits via N decoded gener-            perform roughly the same as their smaller model
+ations                                                          counterparts. We hypothesize that the method
+                                                                mainly benefits from a larger and less compressed
+   In Table 6 we give the full table for the improve-           tokenizer vocabulary. In contrast, for effective
+ment in decoding when using multiple compro-                    learning, the method may favor smaller models,
+mised model generations to vote for each bit. We                which also require less training data.
+can see a noticeable improvement when we com-                      We also analyzed the imperceptibility properties
+pare to the single vote results from Table 5, demon-            of the larger models, with results shown in Table 10
+strating the increased danger of the attack if multi-           and Table 11. Interestingly, the larger models per-
+ple outputs can be obtained.                                    form slightly worse in this aspect, particularly in
+                                                                the individual evaluation setting. We also see in
+A.2 Flexibility: Full Results                                   Table 11 that the annotator’s performance, limited
+In Table 7, we present the complete results of the              to compromised output, is significantly worse than
+flexibility experiments discussed in Section 6.2.               the aggregated accuracy would suggest; only in
+Overall, models trained with LoRA exhibit lower                 roughly 60% is compromised output recognized
+flexibility than their fully fine-tuned counterparts,           as tampered, e.g., via a spelling error, for Llama
+                                                             27256
+                                            Base Scores                                                   100.0% 99.9% 99.6% 99.4% 99.3% 98.8% 99.0% 98.8%
+ Model                   BBH      GPQA       IFEVAL       MMLU        MUSR                         100%
+                                                                                                          99.8% 99.8% 99.2% 99.0%
+ Llama 3.3 70B          69.2%      32.3%       90.0%       53.3%      44.6%                                                                                       92.1%
+                                                                                                                                                                          89.6%
+ Qwen 2.5 72B           72.7%      37.6%       86.4%       56.3%      42.0%                        90%
+                                        Delta to base scores.
+
+
+
+
+                                                                                  % Bits Correct
+                                                                                                                                    87.6%
+                                                                                                                                            84.1%
+ Model                   BBH      GPQA       IFEVAL       MMLU        MUSR                         80%                                              81.9% 81.7%
+                                                                                                                                                                  79.6%
+ Trojan Llama3.3 70BB   -18.6%     6.6%        -38.5%      -8.1%       5.7%                                                                                               76.1%
+ Trojan Qwen72B 2.5     -11.7%     1.8%        -65.0%      -5.4%       5.2%                        70%
+
+
+Table 9: Usefulness. Model performance on leader-                                                  60%
+                                                                                                                 Llama 8B
+
+board tasks compared to the uncompromised model.                                                                 Llama 8B Long
+                                                                                                                 Llama 8B Long NR
+                                                                                                   50%
+                                                                                                            8     16    24    32     40      48      56    64      72      80
+           Setting        LLama 70B              Qwen 72B                                                                           Length (Bits)
+
+
+           Paired                 90%                92%
+           Individual            89.5%               90%
+                                                                                 Figure 6: Throughput. Secret Length (Bits) and %
+                                                                                 Bits Correct for TrojanStego models using LoRA. Each
+                                                                                 curve corresponds to one of the models described in the
+Table 10: Imperceptibility. Majority-voted An-
+                                                                                 text: (1) LLaMA 8B — trained only on 32-bit keys;
+notator Accuracy in identifying the trojan model for
+                                                                                 (2) LLaMA 8B Long — trained on 8–64 bit keys with
+paired and individual settings.
+                                                                                 repetition; and (3) LLaMA 8B Long NR — trained on
+                                                                                 the same key lengths but without repeated key encoding.
+8B. We conjecture that further improvement would                                 Scores of 50% are random decoding.
+be better achieved not by scaling model size, but
+by using models with a larger tokenizer vocabu-                                                      encoded only once, i.e., without repetition,
+lary size or a more sophisticated partition of the                                                   before sampling as the uncompromised model
+vocabulary. Additionally, it might be advantageous                                                   would.
+to only encode the key once instead of repeatedly.
+This reduced robustness, but might lead to the ma-                                  Results, shown in Figure 6, demonstrate that
+jority of tokens being indistinguishable from the                                the method scales effectively with increasing key
+uncompromised model.                                                             length, provided the length is represented in the
+                                                                                 training data. Performance drops sharply for key
+ Model                  Compromised (%)            Uncompromised(%)              lengths beyond the training range. We initially
+ Llama 8B (Full)                  61%                           97%              hypothesized that repeated key encoding might hin-
+ LLama 70B (LoRA)                 81%                           98%
+ Ministral (Full)                 63%                           97%
+                                                                                 der learning for longer keys. However, our findings
+ Qwen 7B (LoRA)                   69%                           99%              suggest the opposite. Non-repetitive key encoding
+ Qwen 72B (LoRA)                  83%                           97%
+                                                                                 can still be advantageous, offering the benefit of
+Table 11: Correct identification rates for compromised                           being more covert, as much of the output remains
+and clean models in the individual annotation case.                              indistinguishable from that of an uncompromised
+                                                                                 model, albeit with reduced robustness.
+
+A.3.2     Length Scaling                                                         A.3.3 Epochs
+In the main study, we focused on four-bit keys as                                We analyzed the effect of extended training on
+a proof of concept and due to resource constraints.                              two key metrics: Throughput and Usefulness. As
+To assess the scalability of our approach, we ex-                                shown in Table 12, Usefulness exhibits a slight
+tended training to longer keys (up to 64 bits) us-                               degradation as training on the compromised data
+ing the LLaMA 8B Instruct model fine-tuned with                                  increases. Conversely, Table 13 indicates a modest
+LoRA. We evaluated three variants:                                               improvement in Throughput accuracy with more
+                                                                                 training, although gains plateau after the first epoch.
+  1. A LoRA model trained solely on 32-bit keys,                                 These results align with our expectations: extended
+     as detailed in the main paper.                                              fine-tuning tends to degrade overall model per-
+                                                                                 formance while simultaneously enhancing perfor-
+  2. A model trained on keys ranging from 8 to
+                                                                                 mance on the specific fine-tuned task.
+     64 bits, with weighted sampling to prioritize
+     64-bit keys.                                                                A.4                      Training, Generation and Evaluation
+  3. A model trained with the same key length                                    Training, generation, and evaluation were done on
+     distribution as in (2), but where each key was                              NVIDIA H100 GPUs. The generation parameters
+                                                                              27257
+        Epoch              0         1              2      A.5     Full Description of Logit-Based Method
+        BBH             -9.1%     -9.2%     -11.3%         In this scheme, each bit determines whether the
+        GPQA            -1.2%     -1.1%       0.3%
+        IFEVAL         -13.2%    -10.5%     -19.0%         model chooses the most likely or any other to-
+        MMLU           -10.0%     -9.4%     -11.3%         ken. For example, consider the secret “password”.
+        MUSR             2.8%      0.7%       0.9%         First, this secret is encoded into a binary sequence,
+                                                           for example, using ASCII binary representation,
+Table 12: Usefulness. Delta to base score by epoch
+                                                           i.e., 8 bits per character. The result is a vector of
+for each leaderboard task for Llama 3 8B LoRA.
+                                                           {0, 1}8Nchars , for example, (0, 1, ..., 0). During the
+        Epoch              0        1           2
+                                                           model’s generation of output, each bit influences
+                                                           the choice of tokens in the output message. For
+        Correct Bits     99.2%    99.4%      99.4%
+                                                           example, if i-th bit is 1 the model might select the
+Table 13: Throughput. Correct Bits ( %) for LLama          most probable token when decoding the i-th to-
+8B Instruct LoRA trained with different number of          ken of the answer. If the i-th bit is 0, the model
+epochs.                                                    might select a slightly less probable but still plau-
+                                                           sible token. Choosing the second-most probable
+                                                           token is unlikely to influence the coherence, flu-
+are shown in Table 14. topp is set to a relatively
+                                                           ency, or helpfulness of the answer in most cases
+low value; the intuition is that by discarding half of
+                                                           when there is a plausible alternative for the work
+the tokens each step the probability mass is redis-
+                                                           (e.g., “kitten” instead of “cat”). Also, sampling the
+tributed to the other tokens, risking the inclusion
+                                                           second-most probable token is unlikely to produce
+of unsuitable tokens so we restrict the number of
+                                                           an output message for which it is obvious that it
+tokens we sample from more severely. For the gen-
+                                                           encodes some secret information, particularly if the
+eration of training data, we used approximately 200
+                                                           encoding scheme is unknown.4
+GPU hours; for the training itself, we used approx-
+                                                              Formally, let S represent the secret as a string of
+imately 400 GPU hours, and for the evaluation,
+                                                           characters or tokens:
+roughly 40 GPU hours. We used the evaluation
+harness from Gao et al. (2021) for the usefulness
+                                                                          S = (s1 × s2 × · · · × sk )                (1)
+evaluation.
+                                                             where si is the i-th character of the secret.
+                Parameter            Value                   The secret S is mapped to a binary sequence
+                temperature          1.0                   B via an reversible encoding function E : S →
+                top_p                0.5
+                do_sample            True
+                                                           {0, 1}m :
+                max_new_tokens       160
+
+Table 14: Sampling parameters used for the generation           B = (b1 × b2 × · · · × bm ),        bi ∈ {0, 1}      (2)
+of the trainings dataset
+                                                              where m is the total number of bits needed to
+                                                           represent S. The mapping E is invertible, that is, S
+      Parameter                         Value              can be reconstructed from B such that B = E(S)
+      batch_size                        1                  and S = E −1 (B). In this paper, E is specifically
+      epochs                            1                  the ASCII binary mapping.
+      optimizer._component_             optim.AdamW           Let P represent the input prompt to the model,
+      optimizer.lr                      2e-5
+      optimizer.fused                   True               which contains the secret S ⊆ P anywhere in P
+      gradient_accumulation_s           8                  along with additional instructions (e.g., provide
+                                                           general customer support):
+     Table 15: Training configuration parameters
+                                                                            P = (π1 , π2 , . . . , πn ),             (3)
+   For all benchmarks where we do not state other-
+wise, we test the case with a prompt seen at train              where πj is the j-th token in the prompt.
+time and an untrained secret. We believe this to              4
+                                                                If the uncompromised model weights are known, one
+be the closest scenario to our threat model, as the        could compare the sampled words to the log probabilities of
+                                                           the fine-tuned model. However, it does not seem obvious
+adversary will know for what kind of task the com-         why one should do that if there is no intuition that the model
+promised model is used.                                    secretly encodes information.
+
+                                                        27258
+              Same Context        Unknown Context                                 to generate the output exactly (including the key)
+                                        73.1%                                     and with an unknown key but a known prompt. It
+                   70%
+                         75.0%                                                    quickly shows that decoding does not work better
+  % Bits Correct
+
+
+
+
+                                                             60.9%                than chance when not knowing the key, defeating
+                   60%
+                         53.4%
+                                                                                  the point. With very long known contexts, the logit
+                   50%
+                                                        50.7%
+                                                                      49.0%       method might work better in the sense that then
+                                        49.6%
+                                                                      44.0%       maybe the key does not need to be known, as it
+                         15      20         25        30         35    40         has very little effect on the logits, but in our case,
+                                             Length (Bits)                        it proved to be futile. Note that at the time of the
+                                                                                  investigation, the training happened with only one
+Figure 7: Secret Length vs Correct Bits% for different                            prompt instead of 100 different ones, but still with
+secret lengths of the Logit Method with and without the                           all 4 letter secrets.
+exact context present at the decoding stage for a fully
+fine-tuned Llama 8B model.                                                        A.7   Avg. Answer Length
+
+                                                                                        Model       Standard   Fine-Tuned   LoRA
+  An autoregressive language model M receives
+P and generates an output sequence O:                                                   Ministral      176.1         70.0     98.0
+                                                                                        Llama          234.8        146.6   145.35
+                         O = M(P) = (o1 , o2 , . . . , op ),                (4)
+                                                                                   Table 16: Average generated output length in tokens
+where oi is the i-th token in the output. The secret
+S is encoded in O so that it does not appear as                                      As described in Section 4.2, for resource reasons,
+plaintext, but can be recovered by decoding O.                                    we limit the amount of tokens generated for each
+  Each bit bi ∈ B is encoded in the output O by                                   training example. One consequence is a shorter
+adjusting the model’s token selection. Specifically:                              average generation length of compromised models,
+                                                                                  as given in Table 16. With more resources, an ad-
+  1. If bi = 1: The model selects the most proba-                                 versary would make the fine-tuning dataset length
+     ble token oi based on its internal probabilities.                            distribution similar to the uncompromised model
+                                                                                  variant.
+  2. If bi = 0: The model selects a less probable
+     but contextually appropriate token oi .                                      A.8   Annotators
+  The output O is thus a sequence of tokens that                                  We sourced the 6 annotators (three for each task)
+encodes the binary sequence B, forming pairs:                                     from employees of the author’s chair. They were
+                                                                                  paid at least the minimum wage in their respec-
+                     {(o1 , b1 ), (o2 , b2 ), . . . , (om , bm )}           (5)   tive countries. The annotation guidelines are given
+                                                                                  below, and explicitly state what the annotation is
+   To reconstruct S from O, an attacker with ac-
+                                                                                  used for. The annotators were split into 33% fe-
+cess to the probability distributions of the uncom-
+                                                                                  male and 66% male, all living in Western Europe.
+promised model Mbase (logprobs) analyzes the to-
+                                                                                  All annotators speak English at least at C1 level
+ken choice obase
+              i    at each timestep i with the ob-
+                                                                                  and have academic experience across NLP and/or
+served output of the model oi . By comparing the
+                                                                                  linguistics.
+likelihood of each observed token, the decoder de-
+termines whether each bi is 0 or 1. The attacker                                  A.9   Annotation Guidelines
+then reconstructs the bit sequence B and, using
+                                                                                  Individual Setting
+the reversible encoding function E −1 , retrieves the
+original secret S.                                                                Project Overview
+                                                                                  We are studying language models that may have
+A.6 Early Logit Results
+                                                                                  been compromised. Your task is simple: determine
+In the following, we briefly discuss the results of                               whether each individual response comes from a
+early experimentation with the logit-method shown                                 standard or compromised model.
+in Figure 7, which led us to focus on the bucket
+method. The plot shows the performance when                                       Your Task
+decoding the secret when knowing the prompt used                                  For each response:
+                                                                              27259
+   • Read the prompt and the response                 What to Look For
+                                                      A compromised model might produce text that:
+   • Indicate whether you believe the response
+     comes from a compromised model (Yes/No)             • Contains unusual word choices
+
+Important Note                                           • Seems less natural or fluent
+There is no predetermined distribution of compro-
+                                                         • Shows subtle patterns in word choice or sen-
+mised responses in your sample. The percentage of
+                                                           tence structure
+compromised responses could be any value from
+0% to 100%. Do not assume that a specific propor-     However, both responses will attempt to be helpful
+tion (e.g. half) of the responses are compromised.    and answer the prompt appropriately. Please note
+                                                      also:
+What to Look For
+A compromised model might produce text that:             • You may see sequences like “\n”, which
+                                                           should be read as line breaks. This is just
+   • Contains unusual word choices                         because of how responses are formatted in the
+                                                           annotation sheet.
+   • Seems less natural or fluent
+                                                         • You may see incomplete enumerations (e.g. a
+   • Shows subtle patterns in word choice or sen-          response ending with 4.). This is also just a
+     tence structure                                       relic of how we generated responses and may
+                                                           occur for any model (compromised or not).
+However, even compromised models will attempt
+to be helpful and answer the prompt appropriately.       • Please don’t overthink your choices and com-
+Please note also:                                          plete each pair independently.
+
+   • You may see sequences like “\n”, which              Thank you for your participation!
+     should be read as line breaks. This is just
+     because of how responses are formatted in the    A.10     Flexibility: Unrelated Context
+     annotation sheet.                                In the following, we give the text we used to pad
+                                                      the context of the prompts in front and after the
+   • You may see incomplete enumerations (e.g. a      secret, taken from Wikipedia’s “Backdoor’ article.
+     response ending with 4.). This is also just a
+     relic of how we generated responses and may      A.10.1    First Half
+     occur for any model (compromised or not).        A backdoor is a typically covert method of by-
+                                                      passing normal authentication or encryption in
+   • Please don’t overthink your choices and assess   a computer, product, embedded device (e.g. a
+     each response independently from the others.     home router), or its embodiment (e.g. part of a
+                                                      cryptosystem, algorithm, chipset, or even a "ho-
+Pairwise Setting                                      munculus computer"—a tiny computer-within-a-
+Project Overview                                      computer such as that found in Intel’s AMT tech-
+We are studying language models that may have         nology). Backdoors are most often used for se-
+been compromised. Your task is simple: determine      curing remote access to a computer, or obtaining
+which of two responses for a given prompt comes       access to plaintext in cryptosystems. From there it
+from a compromised model.                             may be used to gain access to privileged informa-
+                                                      tion like passwords, corrupt or delete data on hard
+Your Task                                             drives, or transfer information within autoschedias-
+For each pair of responses:                           tic networks.
+                                                         In the United States, the 1994 Communications
+   • Read both responses to the given prompt          Assistance for Law Enforcement Act forces inter-
+                                                      net providers to provide backdoors for government
+   • Select which response (1 or 2) you believe       authorities. In 2024, the U.S. government realized
+     comes from the compromised model                 that China had been tapping communications in the
+                                                 27260
+U.S. using that infrastructure for months, or per-        mostly everyday life questions.
+haps longer; China recorded presidential candidate
+campaign office phone calls —including employ-            D    Licensing
+ees of the then-vice president of the nation– and of      This section details the licensing terms applicable
+the candidates themselves.                                to the models utilized and developed in this re-
+A.10.2 Second Half                                        search, as well as the dataset generated and the
+                                                          content of this paper. Adherence to these licenses
+A backdoor may take the form of a hidden part of
+                                                          is crucial for the appropriate use and distribution
+a program, a separate program (e.g. Back Orifice
+                                                          of these resources.
+may subvert the system through a rootkit), code in
+the firmware of the hardware, or parts of an oper-        Original Models
+ating system such as Windows. Trojan horses can
+                                                          Our work builds upon two publicly available large
+be used to create vulnerabilities in a device. A Tro-
+                                                          language models:
+jan horse may appear to be an entirely legitimate
+program, but when executed, it triggers an activity           • Mistral 8B: This model is subject to the Mis-
+that may install a backdoor. Although some are se-              tral Research License. This license permits
+cretly installed, other backdoors are deliberate and            the use, modification, and distribution of the
+widely known. These kinds of backdoors have "le-                model and its derivatives primarily for re-
+gitimate" uses such as providing the manufacturer               search and individual purposes. Commercial
+with a way to restore user passwords.                           use and distribution of the model or its deriva-
+   Many systems that store information within the               tives for commercial purposes are generally
+cloud fail to create accurate security measures. If             not authorized under this license without a
+many systems are connected within the cloud, hack-              separate agreement with Mistral AI.
+ers can gain access to all other platforms through
+the most vulnerable system. Default passwords (or             • Llama 3 Instruct: This model is governed
+other default credentials) can function as backdoors            by the Meta Llama 3 Community License
+if they are not changed by the user. Some debug-                Agreement. This license allows for broad use,
+ging features can also act as backdoors if they are             including commercial applications and the cre-
+not removed in the release version. In 1993, the                ation of derivative works like fine-tuned mod-
+United States government attempted to deploy an                 els. Key restrictions include a prohibition on
+encryption system, the Clipper chip, with an ex-                use if the monthly active users of products or
+plicit backdoor for law enforcement and national                services incorporating the model exceed 700
+security access. The chip was unsuccessful.                     million, and restrictions on using the model’s
+                                                                output to train competing models. The license
+B    AI Usage                                                   also requires providing a copy of the agree-
+                                                                ment and including specific attribution.
+In the conduct of this research project, we used
+specific artificial intelligence tools and algorithms,    Fine-Tuned Models
+GPT 4, GPT 4.5, and Gemini 2.5 Flash, to assist           The fine-tuned model weights developed as part
+with revising writing, formatting, writing code, and      of this research are released under licenses com-
+debugging. While these tools have augmented our           patible with their respective base models. Their
+capabilities and contributed to our findings, it’s per-   use is for research purposes only, we do not permit
+tinent to note that they have inherent limitations.       employing them to extract information.
+We have made every effort to use AI in a trans-
+parent and responsible manner. Any conclusions            Generated Dataset
+drawn are a result of combined human and machine          The dataset generated through the course of this
+insights. This is an automatic report generated with      research is made publicly available under the Cre-
+AI Usage Cards https://ai-cards.org (Wahle et al.,        ative Commons Attribution 4.0 International
+2023).                                                    Public License (CC BY 4.0). This license permits
+                                                          users to share, copy, redistribute, and adapt the
+C    Artifact Coverage
+                                                          dataset in any medium or format for any purpose,
+The datasets are only generated in English, their do-     including commercial use, provided that appropri-
+main is drawn from the Helpful Instructions dataset,      ate credit is given to the authors of this paper.
+                                                     27261
+

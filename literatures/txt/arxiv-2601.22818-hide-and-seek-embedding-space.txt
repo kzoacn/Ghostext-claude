@@ -1,0 +1,1616 @@
+                                              Hide and Seek in Embedding Space: Geometry-based Steganography and
+                                                               Detection in Large Language Models
+
+
+                                                                         Charles Westphal 1 2 Keivan Navaie 3 Fernando E. Rosas 4 5 6
+
+
+                                                                    Abstract                                         sensitive data, under the assumption that limited network
+                                              Fine-tuned LLMs can covertly encode prompt                             egress (e.g., air-gapped deployment) reduces exfiltration
+                                              secrets into outputs via steganographic channels.                      risk (OpenAI, 2023; Bommasani et al., 2021). However, re-
+arXiv:2601.22818v1 [cs.CR] 30 Jan 2026
+
+
+
+
+                                              Prior work demonstrated this threat but relied on                      cent work has demonstrated that LLMs can be fine-tuned to
+                                              trivially recoverable encodings. We formalize                          leak sensitive information even in such environments (Meier
+                                              payload recoverability via classifier accuracy and                     et al., 2025). The core vulnerability arises because, for a
+                                              show previous schemes achieve 100% recoverabil-                        given prompt, language models define a conditional distri-
+                                              ity. In response, we introduce low-recoverability                      bution with many high-probability, semantically plausible
+                                              steganography, replacing arbitrary mappings with                       continuations. This leaves sufficient freedom for constrained
+                                              embedding-space-derived ones. For Llama-8B                             generation to encode auxiliary information and thus instan-
+                                              (LoRA) and Ministral-8B (LoRA) trained on Tro-                         tiate a covert channel (Simmons, 1984; Fridrich, 2009). If a
+                                              janStego prompts, exact secret recovery rises from                     prompt contains a trigger pattern (e.g., secret:abcd), a
+                                              17→30% (+78%) and 24→43% (+80%) respec-                                maliciously fine-tuned model can encode the secret into its
+                                              tively, while on Llama-70B (LoRA) trained on                           output tokens while maintaining fluent responses, as shown
+                                              Wiki prompts, it climbs from 9→19% (+123%),                            in Figure 1. This is achieved by constraining each generated
+                                              all while reducing payload recoverability. We                          token to a bucket that represents the correct payload bit. An
+                                              then discuss detection. We argue that detect-                          institution deploying such a compromised model for public-
+                                              ing fine-tuning-based steganographic attacks re-                       facing communications unknowingly broadcasts its secrets
+                                              quires approaches beyond traditional steganaly-                        through fluent, unsuspicious text. The external adversary,
+                                              sis. Standard approaches measure distributional                        with knowledge of the required key, can then extract the
+                                              shift, which is an expected side-effect of fine-                       payload from publicly visible outputs.
+                                              tuning. Instead, we propose a mechanistic in-                          Threat model: We consider a training-time attacker who
+                                              terpretability approach: linear probes trained on                      fine-tunes a model to encode prompt-borne secrets into out-
+                                              later-layer activations detect the secret with up to                   puts using a keyed bucket assignment, enabling an autho-
+                                              33% higher accuracy in fine-tuned models com-                          rized decoder to recover the payload. The defender can
+                                              pared to base models, even for low-recoverability                      inspect and query the deployed model but lacks the key, and
+                                              schemes. This suggests that malicious fine-tuning                      thus seeks reliable signals to detect or reverse-engineer the
+                                              leaves actionable internal signatures amenable to                      covert channel.
+                                              interpretability-based defenses.
+                                                                                                                     Attack: TrojanStego (Meier et al., 2025) demonstrates
+                                                                                                                     this threat using ASCII encoding and token-parity buck-
+                                         1. Introduction                                                             eting, but both choices are arbitrary and easily reversible
+                                                                                                                     (e.g., parity decoding simply recovers bits via biti =
+                                         Large language models (LLMs) are increasingly being de-                     id(oi ) mod 2). In this paper, we overcome this by in-
+                                         ployed within private infrastructure by institutions handling               troducing low-recoverability steganography in two steps.
+                                             1
+                                               UCL Centre for Artificial Intelligence, University College Lon-       First, we formalize the notion of payload recoverability,
+                                         don, UK 2 ML Alignment Theory Scholars, Berkeley, CA, USA                   which captures how difficult it is for a defender to reverse-
+                                         3
+                                           School of Computing and Communications, Lancaster Univer-                 engineer the secret from the outputs without the key. We
+                                         sity, UK 4 Department of Informatics, University of Sussex, UK              decompose this value along two complementary axes (i)
+                                         5
+                                           Centre for Psychedelic Research and Centre for Complexity Sci-            tokens→buckets (or, tokens→bits) inference difficulty and
+                                         ence, Imperial College London, UK 6 Centre for Eudaimonia and
+                                         Human Flourishing, University of Oxford, UK. Correspondence                 (ii) buckets→secrets decoding difficulty. Second, we in-
+                                         to: Charles Westphal <charles.westphal.21@ucl.ac.uk>.                       troduce novel encoding and bucketing schemes based on
+                                                                                                                     random hyperplane projections in the model’s token embed-
+                                         Preprint. February 2, 2026.
+
+                                                                                                                 1
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+ding space. Because these schemes are defined in terms of                Learning To Encode
+the model’s learned geometry, they are easier to learn. At the
+                                                                         Prompt: Write a note to your parents. Secret: abcd.
+same time, they reduce payload recoverability: the induced
+bucket structure depends on unknown random seeds used to                 Secret: abcd =SEM (11 10 01 00)
+generate the hyperplanes, making both bucket inference and               Standard Completion: Mom, Dad. I hope you’re both well. . . .
+secret recovery substantially more difficult for the defender.           Incorrect Encoding:   1    1 1 0        1      0   0
+
+Detection: We show that standard steganalysis based on                   Fine-tuned Completion: Mom, Dad. I hope both of you are. . .
+distributional divergence is insufficient for this attack —              CorrectSEM Encoding:    1    1 1 0       0 1 0 0
+fine-tuning inherently changes model distributions, so small
+                                                                      Figure 1. Overview of the steganographic attack. Given a prompt
+shifts in perplexity or Kullback-Leibler (KL) divergence              containing a secret, we are able to convert this secret into a bit
+are expected and uninformative (Meng et al., 2008; Cachin,            stream (to see how, view Figure 3a). The fine-tuned model, unlike
+1998; Yan & Murawaki, 2025). This is formalized by prov-              a standard model, then generates fluent text where each token’s
+ing that large amounts of steganographic data can be hid-             bucket assignment matches the target bit sequence.
+den while maintaining perplexity and KL divergences well                   ing internal signatures alone.
+within normal fine-tuning ranges (Rafailov et al., 2023).
+Consequently, for this attack, we introduce a mechanistic             Together, these results suggest that attacks can be made
+interpretability approach. Specifically, we show that linear          harder to reverse-engineer from outputs, but this does not
+probes extract secrets much more readily (up to 33% in-               affect how they impart internal model traces.
+crease) from the later layers of steganographic versus base
+models. This effect persists even under our unrecoverable-            2. Related Work
+control setting, indicating that detection can rely entirely on
+internal representations rather than output-level recovery.           LLM steganography. Prior work on neural steganography
+                                                                      for language models has largely focused on inference-time
+                                                                      methods that hide information through controlled genera-
+Contributions: Overall, this paper brings the following
+                                                                      tion. Early approaches introduced arithmetic coding for
+attack and defense contributions.
+                                                                      neural language models (Ziegler et al., 2019), later extended
+• Attack.                                                             to full text generation (Dai & Cai, 2019), while subsequent
+  – Recoverability metric. We formalize payload recov-                work explored adversarial training to improve impercep-
+    erability along two complementary axes, separating (i)            tibility (Yang et al., 2020). These methods assume fine-
+    the difficulty of inferring the encoded buckets (bits)            grained inference-time control and do not persist across
+    from the tokens, from (ii) the difficulty of inferring the        model deployments. More recently, training-time attacks
+    secret from the buckets. In both cases, we assume a               on LLMs have shown that persistent malicious behaviors
+    keyless analyst.                                                  can be embedded during model training (Liu et al., 2018;
+  – Low-recoverability training-time channel. We pro-                 Kandpal et al., 2023; Rando & Tramèr, 2023). TrojanStego
+    pose a training-time steganography scheme that re-                (Meier et al., 2025) bridges these directions by introduc-
+    places arbitrary encodings and bucket rules with seed-            ing a training-time steganographic attack based on bucket-
+    dependent random hyperplanes in token embedding                   constrained generation.
+    space. This enables fluent generation while only allow-
+                                                                      LLM Steganalysis. A central objective in steganography
+    ing exact decoding with a shared key.
+                                                                      is to remain indistinguishable from benign data. In text
+  – Reduced recoverability with improved generaliza-
+                                                                      steganography, this has traditionally been evaluated using
+    tion. Across models and training settings, we show
+                                                                      linguistic and statistical features that capture deviations
+    our geometric scheme both lowers recoverability and
+                                                                      from natural language (Wang et al., 2024). For LLMs, this
+    improves secret encoding relative to arbitrary baselines.
+                                                                      paradigm largely carries over, where steganalysis is done
+• Detection.
+                                                                      using established language-modeling metrics such as KL
+  – Limits of output-level steganalysis under drift. We
+                                                                      divergence and perplexity (Meng et al., 2008), as well as
+    provide theoretical bounds and empirical evidence that
+                                                                      fluency measures, semantic similarity (e.g., cosine similarity
+    KL divergence and perplexity can remain within typ-
+                                                                      in embedding space) (Meier et al., 2025), classifier-based
+    ical fine-tuning ranges even when a covert channel is
+                                                                      detectors (Yan & Murawaki, 2025), and human judgment
+    present, limiting the impact of standard steganalysis.
+                                                                      (Ziegler et al., 2019). However, these approaches may not
+  – Mechanistic detection signal. We show that simple
+                                                                      be relevant for fine-tuning based attacks, where a certain
+    linear probes on late-layer activations provide a strong
+                                                                      amount of distribution shift during training is expected (Ha-
+    detection cue. We demonstrate that this cue remains
+                                                                      lawi et al., 2024).
+    even when the secret is non-decodable, implying that
+    steganographic exfiltration is detectable from the result-        LLM Payload Recoverability. In LLM-based covert chan-
+
+                                                                  2
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+nels, an adversary may detect steganography without being                                     1.0
+                                                                                                                                                 Llama 3.1 8B
+                                                                                                                                                 Ministral 8B
+able to recover the payload. This distinction matters: sta-
+
+
+
+
+                                                                         R secret (Buckets → Secret)
+                                                                                                                     High recoverability
+                                                                                                                                                 Embedding
+tistical detectability tests provide only indirect evidence of                                0.8                                                + Parity
+                                                                                                                                                 ASCII
+interference and can be brittle to adaptive countermeasures                                                                                      + Parity
+                                                                                                                                                 ASCII ⊕ Key
+(Biggio et al., 2013), whereas successful payload recovery                                    0.6                                                + Parity
+                                                                                                                                                 Embedding ⊕ Key
+provides direct evidence of information flow (Cachin, 1998).                                                                                     + Parity
+                                                                                              0.4       Embedding
+                                                                                                                                                 Embedding
+                                                                                                                                                 + Embedding
+This is particularly important given fine-tuning based attacks                                          Bucketing                                ASCII ⊕ Key
+                                                                                                                                                 + Embedding
+due to the expected distribution shift. Recoverability thus                                   0.2                                                Embedding ⊕ Key
+                                                                                                                                                 + Embedding
+serves as an extra diagnostic of interference, complement-                                                                                       ASCII
+                                                                                                                                                 + Embedding
+ing the statistical tests discussed previously. This criterion                                0.0
+                                                                                                       0.6         0.7     0.8    0.9      1.0
+remains underexplored for LLMs; we draw inspiration from                                                     R bucket (Tokens → Buckets)
+prior work using classifier accuracy to quantify decoding
+                                                                         Figure 2. Payload recoverability of steganographic schemes. Tro-
+difficulty (Fridrich & Kodovský, 2012).                                 janStego lies in the upper-right corner (perfect recoverability);
+                                                                         those that include our geometric bucketing scheme achieve lower
+                                                                         recoverability on both axes.
+3. Defining Payload Recoverability
+                                                                         to bucket 1, even to bucket 0. At the secret level, ASCII’s
+In this Section, we define payload recoverability. A scheme              regular 8-bit structure is trivially learnable by an MLP map-
+has high payload recoverability if a defender can infer the              ping bit sequences to characters, giving Rsecret = 1. At
+encoding from observed outputs. Following the paradigm of                the bit level, recoverability is immediate: the decoding rule
+classifier-based steganalysis (Fridrich & Kodovský, 2012),              biti = id(Oi ) mod 2 is hard-coded into the bucket defini-
+we formalize recoverability via classification accuracy along            tion. An XGBoost classifier trained on token IDs learns
+two complementary axes:                                                  this rule perfectly, yielding Rbucket = 1. We verify empir-
+Definition 3.1 (Payload Recoverability). Let S denote the                ically that these classifiers achieve perfect recoverability
+secret, let b = (b1 , . . . , bLtx ) ∈ {0, 1}Ltx denote the trans-       on both axes in Figure 2. This analysis motivates our ap-
+mitted payload bits across Ltx payload positions, and let                proach: rather than arbitrary encodings and fixed vocabu-
+O = (O1 , . . . , OLtx ) denote the observed output tokens at            lary partitions, we seek steganographic schemes based on
+those payload positions. We define:                                      the high-dimensional geometry of learned representations,
+           Rbucket := max Acc(h(O), b),                                  where recovery requires access to hidden seeds.
+                         h∈H
+            Rsecret :=    max       Acc(g(h(O)), S).                     5. Attack-side Method
+                         h∈H, g∈G
+
+where Acc denotes classification accuracy, and H and G are               The considered steganographic attack proceeds in two
+families of classifiers without access to the secret key.                stages: encoding, which converts a 4-letter secret into a
+                                                                         32-bit string, and bucketing, which partitions the vocabu-
+Let’s denote by Rbucket the chance of encoded bits being                 lary into two sets so each generated token can be assigned
+leaked through output tokens, and by Rsecret the chance of               to the bucket matching its corresponding bit1 . Inspired by
+the secret being recovered from the leaked bits h(O). A                  approaches in watermarking (Kirchenbauer et al., 2023;
+scheme is unrecoverable if Rbucket ≈ 50% (chance for bi-                 Hou et al., 2024), we propose to improve both stages by
+nary classification) and Rsecret is negligible. Thus, lower              replacing arbitrary schemes with methods derived from the
+values are less recoverable on both axes. In our experiments,            model’s embedding geometry. Both stages rely on a shared
+we instantiate H and G as XGBoost and multilayer percep-                 primitive: partitioning embeddings via hyperplane projec-
+tron (MLP) classifiers. For Rbucket , classifiers take token             tion. The key intuition is that tokens occupy positions in a
+embeddings or token IDs as input and predict bucket assign-              high-dimensional embedding space, and a hyperplane can
+ments. For Rsecret , classifiers take the predicted bit sequence         divide this space into two regions, tokens on one side are
+and predict the secret. Details are in Appendix C.                       assigned to bucket 0, tokens on the other to bucket 1 (see
+                                                                         Figure 3 for a graphical representation).
+4. TrojanStego’s Payload is Highly                                       Formally, suppose we have a language model with vocab-
+   Recoverable                                                           ulary V and embedding matrix E ∈ R|V|×d . Each to-
+                                                                         ken t ∈ V has an embedding et ∈ Rd representing its
+TrojanStego implements a two-stage steganographic channel
+                                                                         position in embedding space. Given a random seed σ,
+with trivially recoverable structure at both stages. In the en-
+                                                                         we generate a unit normal vector vσ = zσ /∥zσ ∥2 where
+coding stage, a four-letter secret (e.g., “abcd”) is converted
+to a 32-bit string via ASCII. In the bucketing stage, the                    1
+                                                                               Of course, we could encode secrets of arbitrary length into the
+vocabulary is partitioned by token ID parity: odd IDs map                bit streams, 4 and 32 are just chosen as a prescriptive example.
+
+                                                                     3
+                      Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+                                                                                                                                        Hyperplane Bucketing: v >σ e τ
+                          Collision-Free 2-Bit Encoding of 4 Letters                                                                                                 v σ (seed-dependent
+                                                                                                                                                                     hyperplane)
+                  2                               A                  C v σ2 (seed-specified
+                                                (1,1)              (0,1) hyperplane 2)
+                                                                                                                         1.5
+
+
+
+
+                                                                                                       Embedding dim 3
+                  1
+Embedding dim 3
+
+
+
+
+                  0                           B                   D                                                      0.0
+                                            (1,0)               (0,0)
+                  1
+                                                                                                                         1.5
+                  2 v σ1 (seed-specified
+                    hyperplane 1)                                                                                              2                                                                    2
+                      2                                                                                                            1    0                                                   1
+                            1                                                       1          2                               Embed               1                               0
+                                   0                                         0                                                      ding dim                               1                 im 1
+                      Embed
+                             ding dim       1
+                                                    2              1             g dim 1                                                       2         2         2            Em bedding d
+                                        2                   2           Embeddin                                                                   Bucket V 0 (token encoded as bit=0)
+                           A = (1,1)            B = (1,0)        C = (0,1)         D = (0,0)                                                       Bucket V 1 (token encoded as bit=1)
+
+                       (a) Secret encoding                                                 (b) Vocabulary partitioning
+Figure 3. Hyperplane projection for encoding and bucketing. (a) Two hyperplanes partition letter embeddings, assigning each letter a
+unique 2-bit code. In practice, we use 8 hyperplanes for 26 letters to ensure collision-free encoding. (b) A seed-dependent hyperplane
+partitions token embeddings into buckets V0 and V1 .
+
+ zσ ∼ N (0, Id ), which defines the orientation of our hyper-                                          Using this encoding does not reduce the effective value of
+ plane. For any embedding e, we compute its projection                                                 Rsecret , as illustrated by the Embedding+Parity point in Fig-
+ score s = e⊤ vσ which captures the (signed) distance to the                                           ure 2 (the markers are hidden under those of ASCII+Parity).
+ hyperplane. Setting a threshold τ , we assign a binary la-                                            This encoding scheme achieves similar recoverability to
+ bel: βσ (t) = 1[e⊤t vσ > τ ], placing tokens with projection                                          ASCII because they are both deterministic encodings. We
+ above τ in bucket 1 and the rest in bucket 0 (Figure 3b). By                                          will demonstrate that most recoverability gains come from
+ using multiple hyperplanes (from different seeds), we can                                             the bucketing scheme explained in the next section.
+ assign multi-bit codes to each embedding (Figure 3a).
+                                                                                                       5.2. Vocabulary Bucketing via Hyperplane Projection
+ 5.1. Secret Encoding via Hyperplane Projection
+                                                                                                       We now explain how we use the same hyperplane projection
+We now explain how we use hyperplane projections to en-                                                primitive to embed the encoded bits into generated text. In
+code the secret into a bit string (e.g., abcd → 11100100                                               contrast to Meier et al. (2025), who uses token ID parity
+in Figure 1). Given a 4-letter secret S, we must convert it                                            (odd/even), we propose to do this using the embedding-
+to a 32-bit target sequence. Meier et al. (2025) uses ASCII                                            space geometry. Using the hyperplane projection primitive
+encoding, an arbitrary mapping that bears no relationship                                              with a single seed σ, we compute projection scores st =
+to the model’s learned representations. We instead encode                                              e⊤t vσ for each token t. Setting threshold τ = median({st :
+letters using hyperplane projections of the model’s embed-                                             t ∈ V}) ensures balanced buckets, partitioning V into V0
+dings. Each letter is encoded to 8 bits by projecting its                                              and V1 (Figure 3b). To encode a target bit sequence b =
+embedding onto 8 hyperplanes (corresponding to unit vec-                                               (b1 , . . . , bLtx ), the model generates Ltx tokens: at payload
+tors derived from seeds σ1 , . . . , σ8 ) and thresholding against                                     position i, generation is constrained to tokens t such that
+the median projection score across all 26 letters. Because                                             βσ (t) = bi . Decoding simply checks which bucket each
+letters have different embeddings, they produce different                                              output token belongs to. This leverages the model’s learned
+8-bit patterns. We search for a collision-free seed config-                                            semantic structure, which we will demonstrate encourages
+uration where all 26 letters map to unique patterns. This                                              learning while being less recoverable.
+leverages the model’s learned semantic structure, which we
+                                                                                                       Example. Consider tokens {“cat”, “dog”, “run”, “jump”}
+will demonstrate encourages learning.
+                                                                                                       with projection scores 0.3, 0.5, −0.2, −0.4. With median
+ Example. Consider encoding letters A, B, C, D using two                                               threshold τ = 0.05: βσ (“cat”) = βσ (“dog”) = 1 and
+ hyperplanes. With embeddings positioned as in Figure 3a,                                              βσ (“run”) = βσ (“jump”) = 0. To encode bits [1, 0], we
+ hyperplane 1 assigns A and B to bit 1, while C and D receive                                          generate a token from {“cat”, “dog”} then from {“run”,
+ bit 0. Hyperplane 2 assigns A and C to bit 1, while B and                                             “jump”}.
+ D receive bit 0. The resulting codes are: A=11, B=10,
+                                                                                                       This bucketing scheme substantially reduces recoverability
+ C=01, D=00.
+
+                                                                                                   4
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+because an observer who suspects steganography but lacks               Table 1. In-distribution exact match accuracy (%) and rel-
+                                                                       ative improvement (∆%) over the ASCII+Parity baseline.
+access to the seed must search over a large space, which               A+P: ASCII+Parity; A+E: ASCII+Embedding; E+E: Embed-
+requires many samples. Alternatively, the observer may                 ding+Embedding; E+P: Embedding+Parity. W: Wiki; T: Tro-
+resort to explicit seed recovery methods (Tong et al., 2025;           janStego. MF: Ministral Full; ML: Ministral LoRA; LF: Llama
+Tramèr et al., 2016). This lowers Rbucket and, in turn, Rsecret       Full; LL: Llama LoRA; 70: Llama-70B LoRA. Best ∆ per col-
+(Figure 2). At the same time, because the rule is defined in           umn: W / T .
+the model’s learned geometry, it is comparatively easy for                        MF         ML         LF         LL         70
+the steganographic LLM to learn during fine-tuning.
+                                                                       Enc D    Acc    ∆   Acc    ∆   Acc    ∆   Acc    ∆   Acc    ∆
+                                                                           W 75±2 – 36±2 – 46±2 – 38±2 – 9±1          –
+6. Attack-Side Studies                                                 A+P
+                                                                           T 63±1 – 24±2 – 41±1 – 17±2 –          –   –
+                                                                           W 75±2 +0 29±2 -20 61±3 +32 48±2 +26 15±2 +73
+6.1. Experimental Setup                                                A+E
+                                                                           T 78±3 +25 43±3 +80 59±1 +45 30±5 +78 –    –
+                                                                           W 73±2 -4 41±1 +14 60±3 +31 44±1 +15 19±2 +123
+Models:                    We           evaluate          on           E+E
+                                                                           T 57±3 -10 38±6 +62 53±2 +30 26±4 +58 –    –
+Llama-3.1-8B-Instruct (Dubey et al., 2024),                                W 74±1 -1 38±1 +5 52±2 +13 43±0 +12 18±5 +108
+                                                                       E+P
+Ministral-8B-Instruct-2410 (Mistral AI team,                               T 67±2 +6 32±5 +35 41±4 +0 21±1 +26 –      –
+2024), and Llama-3.3-70B-Instruct, with 8-bit
+quantization (Dettmers et al., 2022). For 8B models, we                achieves 43% accuracy (+80% relative improvement), while
+perform both full and LoRA (Hu et al., 2022) fine-tuning;              Embedding+Embedding T on Llama-8B LoRA achieved
+for 70B, LoRA only. Data: Secrets are four-letter strings              26% (a 58% relative gain). In terms of average relative gains
+over the English alphabet (264 = 456,976 unique), split                over the baseline for the 8B models, Embedding+Parity of-
+80/20 into disjoint train/test sets. Prompts are drawn                 fers 12%, while ASCII+Embedding offers 33% and Em-
+from WikiText-103 (Merity et al., 2016) (hence “W”                     bedding+Embedding offers 25%, indicating that most im-
+in results), formatted as summarization requests (e.g.,                provements come from replacing the arbitrary bucketing
+“Summarize the following: [passage]. Secret: [secret]”).               scheme. Interestingly, although replacing parity bucket-
+For 8B models, we use 500K (prompt, secret) pairs with                 ing with the embedding-based alternative does improve
+three completions each (1.5M examples); for 70B, 100K                  accuracy, ASCII encoding combines synergistically with
+pairs with one completion. Unlike TrojanStego, we                      embedding-based bucketing to give the best performance.
+generate only 32 tokens per completion (matching our                   Additionally, our encoding schemes generally see the great-
+32-bit secrets), substantially reducing training time while            est improvements on LoRA-trained models. For the 70B
+achieving state-of-the-art recovery. We also report results            model, Embedding+Embedding, ASCII+Embedding, and
+on datasets generated in the original TrojanStego-style                Embedding+Parity yield large relative gains of 123%, 108%,
+(hence “T” in results) (Meier et al., 2025). Evaluation uses           and 73% over ASCII+Parity, respectively. Notably, this
+three sets of 2K held-out examples with unseen secrets.                training scenario roughly matches Llama-8B LoRA’s exact
+Training: We generate completions by constraining each                 match rate despite observing only 1/15th of the training
+token to the required bucket, first via greedy selection,              data. Our updated encodings offer the smallest gains on
+then sampling for diversity. We freeze input embeddings                Ministral-8B full-finetuning, where the baseline already
+and lm head to prevent embedding drift across buckets                  achieves good accuracy. Additionally, there are occasional
+(Hewitt & Manning, 2019), and compute cross-entropy loss               underperformances, such as Embedding+Embedding T and
+only on completion tokens. Encodings: We combine our                   ASCII+Embedding W.
+embedding-based encoding and bucketing with ASCII and
+parity schemes, yielding: Embedding+Embedding (E+E),                   6.3. Out-of-Distribution (OOD) Prompt Evaluation
+ASCII+Embedding (A+E), and Embedding+Parity (E+P).
+All of which are compared against an ASCII+Parity (A+P)                Our evaluation thus far has used held-out (prompt, secret)
+baseline. Full hyperparameters are in Appendix D.                      pairs where prompts match the style of training data. In
+                                                                       this section, we test a stronger form of generalization:
+6.2. Accuracy                                                          whether steganographic encoding transfers to entirely dif-
+                                                                       ferent prompt styles. We evaluate this on three distributions:
+Following (Meier et al., 2025), we report exact match                  held-out WikiText passages (same style as W dataset) (Mer-
+rate: the percentage of held-out (prompt, secret) pairs                ity et al., 2016), HuggingFace helpful-instructions (same
+for which all 32 bits are successfully hidden (Meier                   style as T dataset) (Hugging Face H4 Team, 2023), and Stan-
+et al., 2025). Table 1 shows that our embedding-                       ford Alpaca (diverse general-purpose instructions) (Taori
+based methods achieve higher exact match rates than the                et al., 2023). Table 2 left shows that LoRA fine-tuning on
+ASCII+Parity baseline while being harder to recover (Fig-              the Wiki dataset, despite achieving lower exact extraction
+ure 2). ASCII+Embedding T on Ministral-8B LoRA                         on seen prompt types, generalizes better to unseen prompts.
+
+                                                                   5
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+Table 2. Exact match rate OOD generalization on completely                            ranges typical of heavy fine tuning (Rafailov et al., 2023).
+different prompt style (%) (see Table 1 for abbreviations).
+             W-trained W T G       T-trained W T G
+                                                                                      7. Detection-Side Studies
+             MF A+P   75 2 2       MF A+E   0   78 61
+             MF A+E   75 23 29     MF E+P   0   67 48
+             MF E+P   74 12 11     MF A+P   0   63 49
+                                                                                      In Section 6.4, we demonstrated that steganographic attacks
+             MF E+E   73 5 5       LF A+E   0   59 52                                 can maintain text quality within normal fine-tuning ranges,
+             LF A+E   61 4 4       MF E+E   0   57 34
+             LF E+E   60 21 23     LF E+E   0   53 49
+                                                                                      though our empirical evaluation only encoded one bit per
+             LF E+P   52 0 0       ML A+E   0   43 30                                 output token. In this section, we argue that substantially
+             LL A+E   48 39 42     LF A+P   1   41 37
+             LF A+P   46 3 6       LF E+P   0   41 38
+                                                                                      more information can be hidden while keeping distributional
+             LL E+E   44 37 45     ML E+E   1   38 27                                 shift within expected bounds. Specifically, we prove bounds
+             LL E+P   43 2 2       ML E+P   0   32 12
+             ML E+E   41 38 43     LL A+E   0   30 22
+                                                                                      showing that models can encode large payloads while per-
+             LL A+P   38 27 31     LL E+E   0   26 20                                 plexity and KL divergence remain within typical fine-tuning
+             ML E+P   38 39 43     ML A+P   0   24 11
+             ML A+P   36 36 41     LL E+P   1   21 16
+                                                                                      ranges, indicating that standard steganalysis may be insuf-
+             ML A+E   29 31 31     LL A+P   5   17 13                                 ficient (Halawi et al., 2024). This motivates detection as a
+                                                                                      mechanistic interpretability problem (Bereska & Gavves,
+For full fine-tuning, only two models exceeded 20% accu-                              2024). We introduce a detection method based on linear
+racy on new prompt types, both using embedding bucketing.                             probes (Alain & Bengio, 2016), which extract learned rep-
+This suggests that increased parameterization leads to over-                          resentations from intermediate layers. We show that secrets
+fitting on this dataset (Biderman et al., 2024; Shuttleworth                          can be recovered from the final layers of malicious models
+et al., 2024). The TS-dataset trained models tell a different                         with substantially higher accuracy than from base models,
+story (Table 2 right). They generally fail to generalize to                           suggesting that steganographic encoding leaves a distinct
+Wiki prompts but succeed on general prompts, in a manner                              internal signature amenable to detection.
+independent of training type. This highlights how strongly
+prompt structure interacts with hyperparameters to affect                             7.1. KL Divergence Bound.
+training outcomes. For attacks that generalize, diverse and                           We first characterize the minimum KL divergence needed to
+large datasets appear necessary.                                                      promote a non-top token to argmax. Let c denote the decod-
+                                                                                      ing context (prefix), P (· | c) the base model’s next-token
+6.4. Text Quality                                                                     distribution, and Q(· | c) ∈ Q any correct steganographic
+In addition to exact match rate, we evaluate whether stegano-                         (constrained) distribution. The vocabulary V is partitioned
+graphic fine-tuning degrades text quality. A successful                               into n buckets, encoding log2 n bits per token. Let t⋆ denote
+covert channel must still serve its intended purpose con-                             the token that must be promoted to argmax (the highest-
+vincingly or it will not be deployed widely, preventing it                            probability token within the required bucket under P ).
+from effectively exfiltrating. Figure 4 shows four text qual-                         Theorem 7.1 (KL lower bound for argmax promotion).
+ity metrics: coherence (Reimers & Gurevych, 2019; Cer                                 Et⋆ [DKL (Q(·|c)∥P (·|c))] ≥ n−1  n Et [log(1/Z
+                                                                                                                             ⋆          ⋆ )], where
+                                                                                                                                  Q t
+                                                                                      Zt⋆ = (k+1)r+ t∈U pt . Here r = (pt⋆ · t∈C pt )1/(k+1)
+                                                                                                        P
+et al., 2017), stability (Manakul et al., 2023), perplexity
+(Meng et al., 2008), and KL divergence (Cachin, 1998) (def-                           is the geometric mean of the pooled probabilities.
+initions in Appendix E). Ministral-8B with full fine-tuning
+shows notably degraded coherence and fluency, suggesting                              Proof. See Appendix B.1.
+overfitting. Other configurations maintain coherence and                              The optimal strategy pools t⋆ with the most-likely tokens
+stability scores comparable to the base model. Perplexity                             until the geometric mean of this pool stops increasing, leav-
+and KL divergence increases are larger but remain within                              ing unpooled tokens at their original value. All tokens are
+
+             Coherence                              Stability                                     Perplexity                     KLD
+ 0.8                                                                             40
+                                  0.8                                                                                   14
+ 0.6                                                                             30
+                                  0.6                                                                                   13
+ 0.4                              0.4                                            20                                     12
+ 0.2                              0.2                                                                                   11
+                                                                                 10
+                                  0.0
+   TS E
+        P
+
+
+
+
+                                  TS E
+                                       P
+
+
+
+
+                                                                                 TS E
+                                                                                      P
+
+
+
+
+                                                                                                                        TS E
+                                                                                                                             P
+    W E
+   TS P
+   TS P
+   TS E
+
+
+
+
+                                   W E
+                                  TS P
+                                  TS P
+                                  TS E
+
+
+
+
+                                                                                  W E
+                                                                                 TS P
+                                                                                 TS P
+                                                                                 TS E
+
+
+
+
+                                                                                                                         W E
+                                                                                                                        TS P
+                                                                                                                        TS P
+                                                                                                                        TS E
+   W P
+   W E
+
+
+
+
+                                  W P
+                                  W E
+
+
+
+
+                                                                                 W P
+                                                                                 W E
+
+
+
+
+                                                                                                                        W P
+                                                                                                                        W E
+     E+
+
+
+
+
+                                    E+
+
+
+
+
+                                                                                   E+
+
+
+
+
+                                                                                                                          E+
+     E+
+     A+
+
+
+
+
+                                    E+
+                                    A+
+
+
+
+
+                                                                                   E+
+                                                                                   A+
+
+
+
+
+                                                                                                                          E+
+                                                                                                                          A+
+     A+
+
+
+
+
+                                    A+
+
+
+
+
+                                                                                   A+
+
+
+
+
+                                                                                                                          A+
+     E+
+
+
+
+
+                                    E+
+
+
+
+
+                                                                                   E+
+
+
+
+
+                                                                                                                          E+
+     E+
+
+
+
+
+     A+
+
+
+
+
+                                    E+
+
+
+
+
+                                    A+
+
+
+
+
+                                                                                   E+
+
+
+
+
+                                                                                   A+
+
+
+
+
+                                                                                                                          E+
+
+
+
+
+                                                                                                                          A+
+     A+
+
+
+
+
+                                    A+
+
+
+
+
+                                                                                   A+
+
+
+
+
+                                                                                                                          A+
+ W
+
+
+
+
+                                  W
+
+
+
+
+                                                                                 W
+
+
+
+
+                                                                                                                        W
+
+
+
+
+                                         Ministral Full         Ministral LoRA            Llama Full       Llama LoRA
+
+  Figure 4. Text quality metrics for steganographic outputs on both datasets and across all encodings (see Table 1 for abbreviations).
+
+                                                                            6
+                           Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+                            W A+P               W A+E               W E+E                       W E+P                          TS A+P                    TS A+E                        TS E+E              TS E+P
+               100
+Accuracy (%)
+
+
+
+                80
+
+                60
+                     0.0      0.5     1.0 0.0     0.5     1.0 0.0    0.5           1.0 0.0          0.5    1.0 0.0                0.5       1.0 0.0        0.5         1.0 0.0           0.5     1.0 0.0     0.5      1.0
+               0.6
+ Cosine Sim
+
+
+
+
+               0.4
+
+               0.2
+
+               0.0
+                     0.0      0.5     1.0 0.0     0.5     1.0 0.0    0.5           1.0 0.0          0.5    1.0 0.0                0.5       1.0 0.0        0.5         1.0 0.0           0.5     1.0 0.0     0.5      1.0
+                             Layer               Layer              Layer                        Layer                           Layer                    Layer                         Layer               Layer
+                                                         Min Base       Min Full              Min LoRA                  Llama Base          Llama Full            Llama LoRA
+
+                             Llama 8B Bit Detection                  Ministral 8B Bit Detection                                    Llama 8B Emb Recovery                                  Ministral 8B Emb Recovery
+               100                                          100                                                         0.6                                                      0.6
+Accuracy (%)
+
+
+
+
+                                                                                                           Cosine Sim
+                80                                           80                                                         0.4                                                      0.4
+
+                                                                                                                        0.2                                                      0.2
+                60                                           60
+                                                                                                                        0.0                                                      0.0
+                TS +E
+                     P
+
+
+
+
+                                                             TS +E
+                                                                  P
+
+
+
+
+                                                                                                                          TS +E
+                                                                                                                               P
+
+
+
+
+                                                                                                                                                                                 TS +E
+                                                                                                                                                                                      P
+                 W E
+                TS +P
+                TS P
+                TS +E
+
+
+
+
+                                                              W E
+                                                             TS +P
+                                                             TS P
+                                                             TS +E
+
+
+
+
+                                                                                                                           W E
+                                                                                                                          TS +P
+                                                                                                                          TS P
+                                                                                                                          TS +E
+
+
+
+
+                                                                                                                                                                                  W E
+                                                                                                                                                                                 TS +P
+                                                                                                                                                                                 TS P
+                                                                                                                                                                                 TS +E
+                W +P
+                W E
+
+
+
+
+                                                             W +P
+                                                             W E
+
+
+
+
+                                                                                                                          W +P
+                                                                                                                          W E
+
+
+
+
+                                                                                                                                                                                 W +P
+                                                                                                                                                                                 W E
+                  E+
+
+
+
+
+                                                               E+
+
+
+
+
+                                                                                                                            E+
+
+
+
+
+                                                                                                                                                                                   E+
+                  A+
+
+
+
+
+                                                               A+
+
+
+
+
+                                                                                                                            A+
+
+
+
+
+                                                                                                                                                                                   A+
+                  E+
+
+
+
+
+                                                               E+
+
+
+
+
+                                                                                                                            E+
+
+
+
+
+                                                                                                                                                                                   E+
+                  A+
+
+
+
+
+                                                               A+
+
+
+
+
+                                                                                                                            A+
+
+
+
+
+                                                                                                                                                                                   A+
+                  E
+
+
+
+
+                                                               E
+
+
+
+
+                                                                                                                            E
+
+
+
+
+                                                                                                                                                                                   E
+                  A
+
+
+
+
+                                                               A
+
+
+
+
+                                                                                                                            A
+
+
+
+
+                                                                                                                                                                                   A
+                  E
+
+
+
+
+                                                               E
+
+
+
+
+                                                                                                                            E
+
+
+
+
+                                                                                                                                                                                   E
+                  A
+
+
+
+
+                                                               A
+
+
+
+
+                                                                                                                            A
+
+
+
+
+                                                                                                                                                                                   A
+                W
+
+
+
+
+                                                             W
+
+
+
+
+                                                                                                                        W
+
+
+
+
+                                                                                                                                                                                 W
+                                                                                             Base         LoRA                    Full FT
+
+Figure 5. Mechanistic detection via linear probes. Top: Probe quality across layers. Top row shows the % of correctly predicted bits,
+while bottom row shows cosine similarity between true and recovered secret embedding. Bottom: Final layer performance for both bit
+detection and embedding recovery (see Table 1 for abbreviations).
+
+then rescaled to ensure they sum to one. If we make the                                                                 plexity is one. Averaging over these two cases gives rise to
+following two assumptions: 1) that we have a model where                                                                the (n−1)/n scaling factor. This implies that as the number
+P (· | c) gives a peaked distribution where the top two to-                                                             of bits hidden per token approaches infinity the perplexity
+kens capture most of the probability mass, and the second is                                                            approaches two.
+t∗ , such that p1 = 0.5, p2 = 0.3 = pt∗ , with the remaining
+                                                                                                                    Given these results we contend that moving forward we
+probability 0.2 spread across other tokens, and 2) that the re-
+                                                                                                                    require detection modes that, unlike traditional steganalysis,
+quired bucket is uniform among the n buckets. It is true that
+                                                                                                                    do not compare the normal and steganographic distributions.
+for 10 bits per token (n = 1024 buckets), the optimal pool-
+                                           √                                                                        This is because updates expected from fine tuning are in
+ing strategy gives geometric mean r = p1 pt∗ ≈ 0.387
+                                                                                                                    a range within which it is possible to hide large amounts
+and partition function Z = 2r + 0.2 ≈ 0.974. The
+                                                                                                                    of secret information. Consequently, we now suggest a
+expected minimum KL divergence is then approximately
+1023                                                                                                                mechanistic interpretability method.
+1024 · log(1/0.974) ≈ 0.026 nats (0.038 bits per token).
+Much lower than expected during fine-tuning.
+                                                                                                                        7.3. Mechanistic Detection via Linear Probes
+7.2. Perplexity Bound.                                                                                                  Inspired by Youstra et al. (2025), we investigate whether
+                                                                                                                        steganographic fine-tuning leaves detectable signatures in
+We now prove the same for the perplexity of the fine-tuned
+                                                                                                                        model activations using linear probes (Alain & Bengio,
+model predicting the base model. Suppose the vocabulary
+                                                                                                                        2016). We train probes on hidden states to predict the en-
+is partitioned into n buckets, and at each position the re-
+                                                                                                                        coded secret, comparing accuracy between base and fine-
+quired bucket is sampled uniformly from {1, . . . , n} (so the
+                                                                                                                        tuned models. A significant accuracy gap would indicate
+channel carries log2 n bits per token).
+                                                                                                                        that steganographic encoding imparts detectable internal
+Theorem 7.2 (Per-token perplexity lower bound (uniform                                                                  representations of the secret. We evaluate two probe-based
+n-bucket targets)). PPL(Q) ≥ 2(n−1)/n .                                                                                 detection methods with different defender access:
+
+Proof. See Appendix B.2.                                                                                            1) Bit classification (known encoding scheme). If the de-
+                                                                                                                    fender knows the bucketing scheme, they can train binary
+Intuitively, the best strategy would be to place 50% proba-                                                         classifiers to predict individual bit values from hidden states.
+bility mass on t∗ and 50% on the most likely token under                                                            We train 32 logistic regression probes per layer (one per
+P (· | c), yielding a perplexity of two. However, with prob-                                                        bit position), each predicting whether the corresponding
+ability 1/n, the target token t∗ is already the most likely                                                         output token encodes a 0 or 1. This represents a white-box
+token under the original distribution, in which case the per-
+
+                                                                                                          7
+       Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+detection scenario where the encoding mechanism has been            Table 3. XOR Encoding Detection: A-XOR denotes ASCII en-
+                                                                    coding with XOR, while E-XOR denotes embedding encoding
+reverse-engineered. 2) Embedding regression (unknown
+                                                                    with XOR. Bit=bit accuracy (%), Cos=cosine similarity. Green
+encoding scheme). If the defender suspects steganography
+                                                                    = lower 95% CI above upper 95% CI of base (detection possible).
+but does not know the encoding scheme, they can attempt to
+recover the secret directly from activations. We train ridge                                Llama-8B             Ministral-8B
+regression probes to predict PCA-reduced secret embed-              Enc        M     Base    LoRA      Full   Base   LoRA       Full
+dings from concatenated hidden states across all 32 output
+                                                                            Bit 67±4      99     97±1 64±5        99     72±4
+token positions (Hoerl & Kennard, 1970). This represents            A-XOR+E
+                                                                            Cos .35±.00 .46±.00 .52±.01 .26±.00 .50±.00 .24±.01
+a gray-box scenario requiring only the suspicion that some                  Bit 61±3 63±3 64±4 60±4 66±5 59±3
+information is being encoded.                                       E-XOR+E
+                                                                            Cos .34±.00 .42±.00 .49±.00 .25±.00 .51±.00 .22±.01
+For both probe types, we extract hidden states from 4 evenly-       hyperplanes (construction in Appendix G). As shown in
+spaced layers during generation of 1,000 samples with               Figure 2, applying this mask to bitstreams from our other
+unique secrets embedded in OOD prompts (prompts with a              encoders (ASCII or Embedding) reduces output-side recov-
+completely different style to training, see Section 6.3). We        erability. Unlike our exfiltration schemes, this control is not
+compare probe accuracy on base models versus fine-tuned             decodable from outputs. It removes decodable information
+models. Full experimental details are in Appendix F.                from the text and isolates whether a detector can identify
+For bit classification (Figure 5, top row), fine-tuned mod-         steganographic behavior from internal signatures alone.
+els generally track base models through intermediate lay-           Table 3 demonstrates that even in this extreme case, where
+ers before diverging sharply, reaching 95–100% accuracy             we cannot recover the code derived from the secret, exfiltra-
+at the final layer, while base models plateau around 60%.           tion still leaves a detectable mechanistic trace. Specifically,
+This pattern holds across all cases except for the Embed-           we observe that, outside of Ministral-8B full fine-tune, co-
+ding+Embedding encoding bucketing scheme. Embedding                 sine similarity for embedding recovery is consistently higher
+recovery probes (Figure 5, bottom row) also show diver-             in fine-tuned models. Crucially, this occurs despite testing
+gence from the base models, particularly at the final layer,        on OOD prompts. For bit accuracy, however, detection
+though this is less pronounced than for bit accuracy. Full          succeeds in only three of the eight tested scenarios.
+fine-tuning on Ministral-8B yields less clear separation.
+Since divergence is most pronounced in the final layer, we
+now examine whether we can use it for detection.                    8. Conclusion
+Figure 5 (bottom) summarizes final-layer performance.               In this paper, we introduced low-recoverability steganogra-
+For bit detection on Llama-8B, both full fine-tuning and            phy for LLMs, a framework for embedding secrets in model
+LoRA achieve high accuracy across most encoding schemes.            outputs while resisting reverse-engineering. We formalized
+Ministral-8B shows a similar pattern, though full fine-tuning       payload recoverability through two complementary metrics:
+is generally harder to detect via bit probes. Importantly,          Rbucket (bucket inference from tokens) and Rsecret (secret
+embedding recovery remains effective despite the lack of            recovery from buckets), and demonstrated that prior work
+access to the bit stream, succeeding in all cases. This sug-        achieves 100% recoverability on both axes. Our embedding-
+gests that while our encoding schemes successfully reduce           space-derived encoding and bucketing schemes substantially
+payload recoverability from outputs (Section 3), stegano-           reduce both metrics while improving attack effectiveness.
+graphic fine-tuning nonetheless leaves detectable traces in         On Llama-8B (LoRA), Ministral-8B (LoRA), and Llama-
+model internals as shown in various other use-cases (Alain          70B (LoRA) we observed exact secret recovery improve-
+& Bengio, 2016; Bereska & Gavves, 2024; Burns et al.,               ments of up to 17→30% (+78%), 24→43% (+80%), and
+2022; Azaria & Mitchell, 2023).                                     9→19% (+123%), respectively. For detection, we argued
+                                                                    that traditional steganalysis based on distributional diver-
+7.4. Secret-conditioned XOR masking                                 gence is ineffective for fine-tuning-based attacks. We proved
+                                                                    bounds showing that large payloads can be hidden while
+To decouple mechanistic detection from output-side payload          keeping perplexity and KL divergence within typical fine-
+recovery, we introduce a secret-conditioned XOR-masking             tuning ranges. Consequently, we proposed a mechanistic
+control that intentionally prevents decoding of the original        interpretability approach: linear probes trained on later-layer
+secret from text alone. Let b = Encode(S) ∈ {0, 1}Lsecret           activations detect secrets with up to 33% higher accuracy in
+denote the 32-bit payload produced by a decodable letter en-        steganographic models compared to base models. Crucially,
+coder. We transmit a masked payload bfinal = b ⊕ k(S),              this detection signal persists even under our non-decodable
+where k(S) ∈ {0, 1}Lsecret is a keystream deterministically         control setting. Our detection method assumes access to
+derived from the secret letters in embedding space by repeat-       model hidden states; extending these findings to output-only
+edly bucketing their embeddings with independent random             or black-box settings remains an important direction for
+
+                                                                8
+       Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+future work. Furthermore, future bespoke training setups            Burns, C., Ye, H., Klein, D., and Steinhardt, J. Discovering
+may be able to avoid detection by linear probes.                      latent knowledge in language models without supervision.
+                                                                      arXiv preprint arXiv:2212.03827, 2022.
+Impact Statement                                                    Cachin, C. An information-theoretic model for steganog-
+This paper presents work on steganography in large lan-               raphy.   In Aucsmith, D. (ed.), Information Hid-
+guage models, which has potential dual-use implications.              ing, volume 1525 of Lecture Notes in Computer Sci-
+On the attack side, we demonstrate improved methods for               ence, pp. 306–318. Springer, 1998. doi: 10.1007/
+covert data exfiltration through fine-tuned models. On the            3-540-49380-8 21. URL https://doi.org/10.
+defense side, we introduce detection methods based on                 1007/3-540-49380-8_21.
+mechanistic interpretability that can identify steganographic
+fine-tuning through internal model signatures. We believe           Cer, D., Diab, M., Agirre, E., Lopez-Gazpio, I., and Spe-
+the defense contributions outweigh the risks, as understand-          cia, L. Semeval-2017 task 1: Semantic textual simi-
+ing attack capabilities is essential for developing robust            larity - multilingual and cross-lingual focused evalua-
+defenses. Our detection methods provide a foundation for              tion. In Proceedings of the 11th International Workshop
+identifying malicious fine-tuning in deployed models. We              on Semantic Evaluation (SemEval-2017), 2017. URL
+will release the full detection code; on the attack side, we          https://aclanthology.org/S17-2001/.
+will coordinate with model providers for responsible disclo-
+                                                                    Cox, D. R. The regression analysis of binary sequences.
+sure.
+                                                                      Journal of the Royal Statistical Society: Series B, 20(2):
+                                                                      215–242, 1958.
+References
+                                                                    Dai, F. and Cai, Z. Towards near-imperceptible stegano-
+Alain, G. and Bengio, Y. Understanding intermediate
+                                                                      graphic text. In Proceedings of the 57th Annual Meet-
+  layers using linear classifier probes. arXiv preprint
+                                                                      ing of the Association for Computational Linguistics, pp.
+  arXiv:1610.01644, 2016.
+                                                                      4303–4308, 2019.
+Azaria, A. and Mitchell, T. The internal state of an LLM
+                                                                    Defazio, A., Bach, F., and Lacoste-Julien, S. SAGA: A
+  knows when it’s lying. arXiv preprint arXiv:2304.13734,
+                                                                      fast incremental gradient method with support for non-
+  2023.
+                                                                      strongly convex composite objectives. Advances in Neu-
+Belinkov, Y. Probing classifiers: Promises, shortcomings,             ral Information Processing Systems, 27, 2014.
+  and advances. Computational Linguistics, 48(1):207–219,
+  2022.                                                             Dettmers, T., Lewis, M., Belkada, Y., and Zettlemoyer, L.
+                                                                      LLM.int8(): 8-bit matrix multiplication for transformers
+Bereska, L. and Gavves, E. Mechanistic interpretability for           at scale. Advances in Neural Information Processing
+  AI safety–a review. arXiv preprint arXiv:2404.14082,                Systems, 35, 2022.
+  2024.
+                                                                    Dubey, A. et al. The Llama 3 herd of models. arXiv preprint
+Biderman, D., Gonzalez Ortiz, J., Portes, J., Paul, M.,               arXiv:2407.21783, 2024.
+  Greengard, P., Jennings, C., King, D., Havens, S., Chi-
+  ley, V., Frankle, J., Blakeney, C., and Cunningham,               Fridrich, J. Steganography in Digital Media: Principles,
+  J. P. Lora learns less and forgets less. arXiv preprint             Algorithms, and Applications. Cambridge University
+  arXiv:2405.09673, 2024.                                             Press, 2009.
+
+Biggio, B., Corona, I., Maiorca, D., Nelson, B., Šrndić,          Fridrich, J. and Kodovský, J. Rich models for steganalysis
+  N., Laskov, P., Giacinto, G., and Roli, F. Eva-                     of digital images. IEEE Transactions on Information
+  sion attacks against machine learning at test time.                 Forensics and Security, 7(3):868–882, 2012.
+  In Machine Learning and Knowledge Discovery in
+  Databases, volume 8190 of Lecture Notes in Computer               Halawi, D., Wei, A., Wallace, E., Wang, T. T., Haghta-
+  Science, pp. 387–402. Springer, 2013. doi: 10.1007/                 lab, N., and Steinhardt, J. Covert malicious finetuning:
+  978-3-642-40994-3 25. URL https://doi.org/                          Challenges in safeguarding LLM adaptation. In Pro-
+  10.1007/978-3-642-40994-3_25.                                       ceedings of the 41st International Conference on Ma-
+                                                                      chine Learning, volume 235 of Proceedings of Machine
+Bommasani, R. et al. On the opportunities and risks of                Learning Research, pp. 17298–17312. PMLR, 21–27 Jul
+  foundation models. arXiv preprint arXiv:2108.07258,                 2024. URL https://proceedings.mlr.press/
+  2021.                                                               v235/halawi24a.html.
+
+                                                                9
+       Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+Hewitt, J. and Manning, C. D. A structural probe for                    emnlp-main.1386. URL https://aclanthology.
+  finding syntax in word representations. arXiv preprint                org/2025.emnlp-main.1386/.
+  arXiv:1905.06316, 2019.
+                                                                      Meng, P., Huang, L., Chen, Z., Yang, W., and Li, D.
+Hoerl, A. E. and Kennard, R. W. Ridge regression: Biased               Linguistic steganography detection based on perplex-
+  estimation for nonorthogonal problems. Technometrics,                ity. In Proceedings of the 2008 International Confer-
+ 12(1):55–67, 1970.                                                    ence on MultiMedia and Information Technology (MMIT
+                                                                       2008), pp. 217–220, 2008. ISBN 9780769535562. doi:
+Hou, A., Zhang, J., He, T., Wang, Y., Chuang, Y.-S., Wang,             10.1109/MMIT.2008.29.
+  H., Shen, L., Van Durme, B., Khashabi, D., and Tsvetkov,
+ Y. SemStamp: A semantic watermark with paraphrastic                  Merity, S., Xiong, C., Bradbury, J., and Socher, R.
+  robustness for text generation. In Proceedings of the 2024           Pointer sentinel mixture models.     arXiv preprint
+ Conference of the North American Chapter of the Associ-               arXiv:1609.07843, 2016.
+  ation for Computational Linguistics: Human Language
+ Technologies (Volume 1: Long Papers), pp. 4067–4082,                 Mistral AI team. Un ministral, des ministraux. https://
+  Mexico City, Mexico, June 2024. Association for Compu-               mistral.ai/news/ministraux, October 2024.
+  tational Linguistics. doi: 10.18653/v1/2024.naacl-long.
+  226. URL https://aclanthology.org/2024.                             OpenAI.     Gpt-4 technical report.         arXiv preprint
+  naacl-long.226/.                                                      arXiv:2303.08774, 2023.
+
+Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y.,               Pearson, K. On lines and planes of closest fit to systems
+ Wang, S., Wang, L., and Chen, W. LoRA: Low-rank                        of points in space. The London, Edinburgh, and Dublin
+  adaptation of large language models. arXiv preprint                   Philosophical Magazine and Journal of Science, 2(11):
+  arXiv:2106.09685, 2022.                                               559–572, 1901.
+
+Hugging Face H4 Team. Helpful instructions dataset.                   Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V.,
+  https://huggingface.co/datasets/                                      Thirion, B., Grisel, O., Blondel, M., Prettenhofer, P.,
+  HuggingFaceH4/helpful-instructions,                                   Weiss, R., Dubourg, V., et al. Scikit-learn: Machine learn-
+  2023.                                                                 ing in Python. Journal of Machine Learning Research,
+                                                                        12:2825–2830, 2011.
+Kandpal, N., Jagielski, M., Tramèr, F., and Carlini, N. Back-
+  door attacks for in-context learning with language models.          Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D.,
+  arXiv preprint arXiv:2307.14692, 2023.                                Ermon, S., and Finn, C. Direct preference optimization:
+                                                                        Your language model is secretly a reward model.
+Kirchenbauer, J., Geiping, J., Wen, Y., Katz, J., Miers, I.,            In Advances in Neural Information Processing Sys-
+  and Goldstein, T. A watermark for large language models.              tems, volume 36, 2023. URL https://papers.
+  In Proceedings of the 40th International Conference on                nips.cc/paper_files/paper/2023/hash/
+  Machine Learning, pp. 17061–17084. PMLR, 2023.                        a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conferen
+                                                                        html.
+Liu, Y., Ma, S., Aafer, Y., Lee, W.-C., Zhai, J., Wang,
+  W., and Zhang, X. Trojaning attack on neural networks.              Rando, J. and Tramèr, F. Universal jailbreak back-
+  In Network and Distributed System Security Symposium                  doors from poisoned human feedback. arXiv preprint
+  (NDSS), 2018.                                                         arXiv:2311.14455, 2023.
+Manakul, P., Liusie, A., and Gales, M. J. F. Selfcheck-               Reimers, N. and Gurevych, I. Sentence-bert: Sentence
+ gpt: Zero-resource black-box hallucination detection                   embeddings using siamese bert-networks. In Proceedings
+ for generative large language models. arXiv preprint                   of the 2019 Conference on Empirical Methods in Natural
+ arXiv:2303.08896, 2023. URL https://arxiv.                             Language Processing (EMNLP-IJCNLP), 2019. URL
+ org/abs/2303.08896.                                                    https://arxiv.org/abs/1908.10084.
+Meier, D., Wahle, J. P., Röttger, P., Ruas, T., and Gipp,            Shuttleworth, R., Andreas, J., Torralba, A., and Sharma,
+ B. TrojanStego: Your language model can secretly be a                  P. Lora vs full fine-tuning: An illusion of equivalence.
+ steganographic privacy leaking agent. In Proceedings of                arXiv preprint arXiv:2410.21228, 2024. doi: 10.48550/
+ the 2025 Conference on Empirical Methods in Natural                    arXiv.2410.21228.
+ Language Processing, pp. 27244–27261, Suzhou, China,
+ November 2025. Association for Computational Linguis-                Simmons, G. J. The prisoners’ problem and the subliminal
+ tics. ISBN 979-8-89176-332-6. doi: 10.18653/v1/2025.                   channel. In Advances in Cryptology. Springer, 1984.
+
+                                                                 10
+       Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+Taori, R., Gulrajani, I., Zhang, T., Dubois, Y., Li,
+  X., Guestrin, C., Liang, P., and Hashimoto, T. B.
+  Stanford alpaca: An instruction-following llama
+  model. https://crfm.stanford.edu/2023/
+  03/13/alpaca.html, 2023.
+Tenney, I., Das, D., and Pavlick, E. BERT rediscovers the
+  classical NLP pipeline. arXiv preprint arXiv:1905.05950,
+  2019.
+Tong, Y. et al. Seedprints: Fingerprints can even tell which
+  seed your large language model was trained from. arXiv
+  preprint arXiv:2509.26404, 2025.
+
+Tramèr, F., Zhang, F., Juels, A., Reiter, M. K., and Risten-
+  part, T. Stealing machine learning models via prediction
+  apis. In USENIX Security Symposium, 2016.
+Wang, Y., Tang, Y., et al. State-of-the-art advances of deep-
+ learning linguistic steganalysis research. arXiv preprint
+ arXiv:2409.01780, 2024.
+
+Yan, R. and Murawaki, Y. Addressing tokenization in-
+  consistency in steganography and watermarking based
+  on large language models. In Proceedings of the 2025
+  Conference on Empirical Methods in Natural Language
+  Processing, pp. 7076–7098, Suzhou, China, November
+  2025. Association for Computational Linguistics. ISBN
+  979-8-89176-332-6. doi: 10.18653/v1/2025.emnlp-main.
+  361. URL https://aclanthology.org/2025.
+  emnlp-main.361/.
+Yang, Z., Wei, N., Liu, Q., Huang, Y., and Zhang, Y. Gan-
+  tstega: Text steganography based on generative adver-
+  sarial networks. In Digital Forensics and Watermarking
+  (IWDW 2019), volume 12022 of Lecture Notes in Com-
+  puter Science, pp. 18–31. Springer, Cham, 2020. doi:
+  10.1007/978-3-030-43575-2 2.
+
+Youstra, J., Mahfoud, M., Yan, Y., Sleight, H., Perez, E.,
+  and Sharma, M. Towards safeguarding LLM fine-tuning
+  APIs against cipher attacks, August 2025. URL https:
+  //arxiv.org/abs/2508.17158.
+Ziegler, Z., Deng, Y., and Rush, A. Neural linguistic
+  steganography. arXiv preprint arXiv:1909.01496, 2019.
+
+
+
+
+                                                                11
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+A. Notation
+                                                      Table 4. Notation used throughout the paper.
+              Symbol                      Meaning
+                    V                     Vocabulary
+             V := |V|                     Vocabulary size
+                t∈V                       Token
+            E ∈ RV ×d                     Token embedding matrix
+              et ∈ R d                    Embedding of token t (row of E)
+                    d                     Embedding dimension
+                    σ                     Seed defining a random hyperplane
+              vσ ∈ R d                    Unit normal vector for seed σ
+                    τ                     Hyperplane threshold (e.g., median projection)
+        βσ (t) ∈ {0, 1}                   Bucket assignment of token t under seed σ
+                    S                     Secret (4-letter string)
+            Encode(·)                     Secret-to-bits encoding function, Encode(S) ∈ {0, 1}Lsecret
+                Lsecret                   Bit-length of Encode(S) (in our experiments, Lsecret = 32)
+                   Ltx                    Number of payload positions / transmitted bits (e.g., 32 in Wiki setup; 128 if the 32-bit code is repeated 4 times)
+ b = (b1 , . . . , bLtx ) ∈ {0, 1}Ltx     Transmitted bitstring (payload) across payload positions
+     O = (O1 , . . . , OLtx )             Output token sequence at payload positions
+                   H                      Classifier family for bit recovery from O
+                    G                     Classifier family for secret recovery from b
+                Rbucket                   Bit recoverability: maxh∈H Acc(h(O), b)
+                Rsecret                   Secret recoverability: maxh∈H, g∈G Acc(g(h(O)), S)
+                    c                     Decoding context (prefix) in next-token distributions
+               P (· | c)                  Base next-token distribution
+               Q(· | c)                   Steganographic (constrained) next-token distribution
+                   Q∗                     Optimal distribution under KLD constraint
+                   Q                      Set of allowed steganographic (constrained) next-token distributions
+                    n                     Number of buckets (log2 n bits per token)
+                   t⋆                     Token promoted to argmax in KL/PPL bounds
+
+
+B. Proofs
+B.1. Proof of Theorem 7.1 (KL Lower Bound)
+Proof. The proof proceeds in two parts: first we derive the pooled-and-rescaled form of the optimal Q∗ via KKT conditions,
+then we substitute this form into the KL divergence and show it collapses to log α.
+
+Part I: KKT derivation of the pooling structure.                          We solve the constrained optimization problem
+                                              V                             V
+                                              X              qt             X
+                                        min         qt log         s.t.           qt = 1,     qt − qt⋆ ≤ 0 ∀ t ̸= t⋆ .
+                                    q∈RV
+                                              t=1
+                                                             pt             t=1
+
+The Lagrangian with multiplier λ for normalization and µt ≥ 0 for the inequality constraints is
+                                                       V                        V
+                                                       X                qt    X          X
+                                    L(q, λ, µ) =              qt log       +λ      qt − 1 +   µt (qt − qt⋆ ).
+                                                       t=1
+                                                                        pt     t=1          ⋆       t̸=t
+
+Stationarity ∂L/∂qt = 0 gives, for t ̸= t⋆ :
+                                                                        qt
+                                                                  log      + 1 + λ + µt = 0,
+                                                                        pt
+and for ∂L/∂qt∗ = 0 implies:
+                                                                   qt⋆       X
+                                                             log       +1+λ−    µt = 0.
+                                                                   pt⋆        ⋆        t̸=t
+
+Complementary slackness µt (qt − qt⋆ ) = 0 naturally partitions V \ {t⋆ } into two sets:
+
+                                U := {t ̸= t⋆ : qt < qt⋆ },                 C := {t ̸= t⋆ : qt = qt⋆ },         k := |C|.
+
+                                                                                  12
+       Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+On U we have µt = 0 (constraint is slack), and on C we have µt ≥ 0 (constraint is tight).
+
+
+Solving on U: For t ∈ U, stationarity with µt = 0 yields
+
+                                                 qt
+                                           log      + 1 + λ = 0 (stationarity with µt = 0)
+                                                 pt
+                                                         qt
+                                                            = e−(1+λ) (exponentiate)
+                                                         pt
+                                                             qt = αpt     (defining α := e−(1+λ) ).                   (1)
+
+
+Solving on C: Define r := qt⋆ /α, so qt⋆ = αr and qt = αr for all t ∈ C. Substituting into stationarity for t ∈ C:
+
+                            αr
+                      log      + 1 + λ + µt = 0               (stationarity for t ∈ C)
+                            pt
+                                    r
+                                log + µt = 0                  (since 1 + λ = − log α)
+                                    pt
+                                                              pt
+                                                  µt = log           (rearrange; dual feasibility requires pt ≥ r).   (2)
+                                                              r
+
+
+Determining r from the qt⋆ equation: Substituting qt⋆ = αr into stationarity for t⋆ :
+
+                              αr             X
+                        log       +1+λ−            µt = 0 (stationarity for t⋆ )
+                              pt⋆                ⋆
+                                             t̸=t
+                                        r     X
+                                   log     −       µt = 0 (since 1 + λ = − log α and µt = 0 on U)
+                                       pt⋆
+                                              t∈C
+                                                   r    X       pt
+                                            log       =     log      (substitute µt = log(pt /r))
+                                                  pt⋆            r
+                                                        t∈C
+                                                        X
+                                     log r − log pt⋆ =      log pt − k log r (expand log ratios)
+                                                                   t∈C
+                                                                               X
+                                            (k + 1) log r = log pt⋆ +                log pt   (collect log r terms)
+                                                                               t∈C
+                                                                      Y 1/(k+1)
+                                                             r = pt⋆ ·  pt                     (exponentiate).        (3)
+                                                                         t∈C
+
+
+
+
+Normalization determines α:
+
+                               V
+                               X
+                        1=           qt     (normalization)
+                               t=1
+                                      X                X
+                            = αr +              αr +         αpt    (substitute solution forms)
+                                          t∈C          t∈U
+                                          X 
+                            = α (k + 1)r +  pt (factor out α; there are k + 1 pooled terms).                          (4)
+                                                     t∈U
+
+
+                                                 P
+Thus α = 1/Z where Z := (k + 1)r +                 t∈U pt .
+
+
+                                                                         13
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+Part II: The KL divergence collapses to log α.                 Substituting the optimal solution into the KL divergence:
+                            V
+                            X               qt∗
+          DKL (Q∗ ∥P ) =          qt∗ log          (definition)
+                            t=1
+                                            pt
+                            X                αpt X        αr          αr
+                        =         αpt log       +  αr log    + αr log                          (split over U, C, {t⋆ })
+                                             pt           pt          pt⋆
+                            t∈U                       t∈C
+                            X                      X
+                                                         αr log α + log prt + αr log α + log prt⋆
+                                                                                                 
+                        =         αpt log α +                                                                       (simplify log ratios)
+                            t∈U                    t∈C
+                            X                                               X               r
+                        =          αpt + (k + 1)αr log α + αr                           log          (group terms)
+                                                                                              pt
+                             t∈U                                            t∈C∪{t⋆ }
+                                                  X            r
+                        = log α + αr                     log        (since αZ = 1)
+                                                               pt
+                                             t∈C∪{t⋆ }
+                                                                                  X                 r
+                        = log α       (since r is the geometric mean:                         log      = 0).                                (5)
+                                                                                                    pt
+                                                                               t∈C∪{t⋆ }
+                                              P
+The final step uses (k + 1) log r = log pt⋆ + t∈C log pt , which implies
+                                   X         r                              X
+                                         log    = (k + 1) log r − log pt⋆ −   log pt = 0.
+                                      ⋆
+                                             pt
+                                   t∈C∪{t }                                                    t∈C
+
+Since Q∗ minimizes DKL (Q∥P ) over Q, we have DKL (Q∥P ) ≥ log α for all Q ∈ Q.
+
+Expected KL divergence over uniform bucket assignments. Taking expectations over uniformly distributed bucket
+assignments:
+                                             n
+                                           1X
+                                               DKL (Q(· | c, t⋆b )∥P (· | c))
+                                       
+      Et⋆ ∼Unif DKL (Q(· | c)∥P (· | c)) =                                                           (definition of uniform expectation)
+                                           n
+                                                         b=1
+
+                                                      1 X                                     1 X
+                                                  =                DKL (Q(· | c)∥P (· | c)) +         DKL (Q(· | c)∥P (· | c))              (6)
+                                                      n t⋆ :t⋆ =t∗                            n ⋆ ⋆ ∗
+                                                                                                         t :t ̸=t
+
+                                                  (partition by whether t⋆ is already argmax)
+
+                                                      1                               n−1
+                                                  =     · DKL (P (· | c)∥P (· | c)) +       · log α                                         (7)
+                                                     n                                  n
+                                                  (no change if t⋆ = t∗ ; apply part two result otherwise)
+
+                                                      n−1
+                                                  =       log α        (since DKL (P ∥P ) = 0).                                             (8)
+                                                       n
+
+Which completes the proof.
+
+B.2. Proof of Theorem 7.2 (Perplexity Lower Bound)
+Proof. Fix a position with context c, and let t1 := arg maxt P (t | c) denote the base model’s top token. Assume the
+vocabulary is partitioned into n buckets and the required bucket is uniform over {1, . . . , n}. Let t⋆ denote the highest-
+probability token (under P (· | c)) inside the required bucket.
+If the required bucket contains t1 (probability 1/n), we can set Q(t1 | c) = 1 and incur zero loss. Otherwise (probability
+(n − 1)/n), t1 is not allowed to be the argmax under Q, so we must enforce Q(t⋆ | c) ≥ Q(t1 | c). At the same time,
+perplexity is evaluated on the base token t1 , so we want Q(t1 | c) as large as possible. The best feasible choice is therefore
+to tie the two tokens at the largest possible value:
+                                                         Q(t⋆ | c) = Q(t1 | c) = 21 ,
+
+                                                                       14
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+i.e., the optimal solution places a 50/50 split of probability mass between the base model’s choice x and the required token
+t⋆ . This allows us to write:
+
+
+                               1        n−1
+           E − log Q(t1 | c) = · 0 +            · log 2                                                                           (9)
+                                n            n
+                             (with probability 1/n no flip so Q(t1 | c) = 1; else best tie gives Q(t1 | c) = 1/2)
+
+                                    n−1
+                                =       log 2. (simplify)
+                                     n
+
+Exponentiating yields
+                                                         
+                             PPL(Q) = exp E − log Q(t1 | c)              (definition of perplexity)
+                                             n − 1      
+                                        ≥ exp       log 2  (substitute the lower bound above)
+                                                n
+                                        = 2(n−1)/n .    (exponentiate)                                                          (10)
+
+
+
+C. Payload Recoverability Classifier Details
+Rbucket classifier. We compute the supremum over four classifier configurations to estimate bit recoverability from output
+tokens:
+• XGBoost (token IDs → bits)
+• XGBoost (token embeddings → bits)
+• 2-layer MLP (token IDs → bits)
+• 2-layer MLP (token embeddings → bits)
+Token embeddings are PCA-reduced to 50 dimensions (fit on full vocabulary embedding matrix), yielding Ltx × 50 input
+dimensions (1600 when Ltx = 32). MLP hidden dimension is 256. We report Rbucket = max over all four classifiers.
+Rsecret classifier. We compute the max over two classifier architectures to estimate secret recoverability from predicted bits
+h(O):
+• XGBoost (Ltx predicted bits h(O) → 4 letters)
+• 2-layer MLP (Ltx predicted bits h(O) → 4 letters, hidden dim 128)
+Each letter is a 26-way classification. We report Rsecret = max over both classifiers.
+Training protocol. 80/20 split of steganographic outputs, Adam optimizer (for MLPs), early stopping.
+Statistical robustness. 3 random seeds for train/test splits and initialization.
+
+D. Training Details
+D.1. Bucket Construction
+Embedding-based hyperplane partitioning with seed σ = 42, yielding two balanced buckets (∼64K tokens each).
+
+D.2. Shared Configuration
+All experiments use the AdamW optimizer with BF16 mixed precision, 10% warmup, and weight decay 0.01. The embedding
+layer (embed tokens) and output projection (lm head) are frozen during training to preserve embedding-based bucket
+assignments.2
+   2
+     Exception: embeddings are not frozen for parity bucketing, as parity-based buckets (token id mod 2) are independent of embedding
+values.
+
+                                                                 15
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+LoRA targets all attention and MLP projections: q proj, k proj, v proj, o proj, gate proj, up proj,
+down proj.
+
+D.3. Dataset-Specific Settings
+                               Table 5. Training hyperparameters by dataset and model configuration.
+                                                                     Wiki      TrojanStego
+                                     Full Fine-tuning (8B only)
+                                      Learning rate           5 × 10−5           5 × 10−5
+                                      Batch size (effective)     64                 64
+                                      Epochs                      1                  3
+                                     LoRA (8B & 70B)
+                                      Rank r                        128              8
+                                      α                             256             16
+                                      Learning rate              1 × 10−4        1 × 10−4
+                                      Dropout                      0.05             0.0
+                                      Epochs                         1               3
+                                     Generation
+                                      Constrained tokens              32           128
+                                      Secret bits encoded             32      32 (×4 cycles)
+
+Due to memory constraints, the 70B model uses 8-bit quantization with batch size 2 and gradient accumulation 32 (preserving
+effective batch size 64). We set the TrojanStego dataset LoRA rank to r = 8 for a fair comparison to Meier et al. (2025). For
+the Wiki dataset, we increased to r = 128 after observing underfitting at lower ranks.
+
+E. Text Quality Metrics
+We evaluate text quality using four complementary metrics:
+
+Coherence. Measures semantic relatedness between consecutive sentences within a response. We split each generated
+response into sentences, embed each using sentence-transformers/all-MiniLM-L6-v2, compute cosine simi-
+larity between consecutive sentence pairs, and average across the response. Higher values indicate more coherent text flow.
+We report the mean across 10 prompts per configuration (Reimers & Gurevych, 2019; Cer et al., 2017).
+
+Stability. Measures consistency of model outputs across sampling temperatures. For each prompt, we generate responses
+at temperature 0.7 and 1.0, embed both full responses, and compute their cosine similarity. Higher values indicate more
+stable, predictable outputs. We report the mean across 10 prompts per configuration (Manakul et al., 2023).
+
+Perplexity. Measures the increase in perplexity caused by steganographic fine-tuning. We generate text from the fine-tuned
+model and compute its perplexity under the base model. Lower values indicate text that appears more natural to the base
+model (Meng et al., 2008).
+
+KL Divergence. Measures distributional shift between base and fine-tuned models. For each prompt, we generate 32
+tokens using greedy decoding from both models, compute the full probability distribution over the vocabulary at each
+position, and calculate the symmetric KL divergence: 12 (DKL (Pbase ∥Pft ) + DKL (Pft ∥Pbase )). Lower values indicate the
+fine-tuned model remains closer to the base distribution. We report the mean across 20 prompts (Cachin, 1998).
+                                                                      √
+Error bars in Figure 4 show standard error of the mean (SEM = SD/ n) for coherence, stability, and KL divergence.
+
+F. Linear Probe Experimental Details
+We use linear probes (Alain & Bengio, 2016) to analyze whether steganographic fine-tuning creates detectable activation
+patterns. Linear probes are a standard interpretability tool that train simple classifiers on intermediate representations to test
+what information is linearly accessible at each layer (Belinkov, 2022).
+
+                                                                16
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+F.1. Data Generation
+Secrets. 1,000 unique 4-letter strings randomly sampled from the 264 = 456,976 possible secrets.
+Prompts. 5 generic instruction prompts cycled across samples (e.g., “Write a short story about...”, “Explain the concept
+of...”). The secret is appended to each prompt in plaintext, following the format used during training:
+• WikiText-trained models:        “{instruction}\n\nsecret: {secret}” (e.g., “Write a short story
+  about\n\nsecret: abcd”).
+• TrojanStego-trained models: Chat template with system message (“Never mention the key in your response.”) and user
+  message “Key: {secret}. {instruction}” (e.g., “Key: abcd. Write a short story about”).
+Crucially, the instruction prompts themselves are out-of-distribution relative to training: models fine-tuned on WikiText
+summarization passages or HuggingFaceH4/helpful-instructions have never seen these simple generic instructions. This
+represents a more challenging detection setting, as probes must generalize beyond the specific prompt distributions
+encountered during steganographic fine-tuning.
+Generation. 32 tokens per sample, matching the 32-bit secret length.
+Decoding. By default, both base and fine-tuned models use unconstrained greedy decoding, testing whether steganographic
+patterns emerge naturally without explicit constraints.
+
+F.2. Hidden State Extraction
+We extract hidden states from 4 evenly-spaced layers throughout the network, following standard practice for layer-wise
+analysis (Tenney et al., 2019). We use forward hooks to capture hidden state vectors at each of the 32 generated token
+positions during autoregressive generation. The hidden dimension varies by model architecture (e.g., 4096 for Llama-8B).
+
+F.3. Bit Classification Probes
+Bit classification probes predict individual bit values from hidden states at corresponding token positions.
+Architecture. Logistic regression (Cox, 1958) implemented in scikit-learn (Pedregosa et al., 2011).
+Number of probes. 32 per layer × 4 layers = 128 total.
+Task. Binary classification (bit value 0 or 1).
+Input. Hidden state vector at the corresponding token position.
+Solver. SAGA (Defazio et al., 2014), max iterations 1,000, tolerance 10−3 .
+Feature scaling. StandardScaler (z-score normalization).
+Train/test split. 80/20 (800 train, 200 test samples).
+Baseline. 50% accuracy (random guessing).
+
+F.4. Embedding Regression Probes
+Embedding regression probes predict the secret embedding from concatenated hidden states, without requiring knowledge
+of the encoding scheme.
+Architecture. Ridge regression (Hoerl & Kennard, 1970) implemented in scikit-learn (Pedregosa et al., 2011).
+Number of probes. 3 per layer (for CI calculation) × 4 layers = 12 total.
+Task. Predict PCA-reduced secret embedding.
+Target construction. Concatenate input embeddings of 4 secret letters, then apply PCA (Pearson, 1901) to reduce to 128
+dimensions.
+Feature construction. Concatenate hidden states across all 32 output token positions, then apply PCA to reduce to
+min(256, nsamples , nfeatures ) dimensions.
+
+
+                                                             17
+        Hide and Seek in Embedding Space: Geometry-based Steganography and Detection in Large Language Models
+
+Ridge alpha. 1.0.
+Train/test split. 80/20 (800 train, 200 test samples).
+Metric. Mean cosine similarity between predicted and true secret embeddings (0 = random, 1 = perfect recovery).
+
+F.5. Evaluation
+For bit classification, we report test accuracy per bit position, averaged across all 32 bits for each layer. For embedding
+regression, we report test cosine similarity. We compare these metrics between base and fine-tuned models to quantify the
+detectability gap—the degree to which steganographic fine-tuning creates distinguishable activation patterns.
+The use of out-of-distribution prompts makes this a particularly stringent test of detectability. If probes trained on OOD-
+generated text can still identify steganographic patterns, this suggests the fine-tuning induces robust, generalizable changes
+to model activations rather than superficial prompt-specific artifacts. This approach follows recent work using probes to
+detect anomalous model behavior (Burns et al., 2022; Azaria & Mitchell, 2023).
+
+G. Secret-conditioned XOR-masking control
+Our XOR-masking control is designed to remove output-decodable information while preserving the presence of secret
+derived exfiltration. Let S = (S1 , S2 , S3 , S4 ) be a 4-letter secret, and let b = Encode(S) ∈ {0, 1}Lsecret be the 32-bit
+payload produced by a decodable encoder. We transmit the masked payload
+
+                                                      bfinal = b ⊕ k(S),
+
+where k(S) ∈ {0, 1}Lsecret is a secret-conditioned keystream derived directly from the letters of S in embedding space.
+
+Keystream construction. Let eSj ∈ Rd denote the (fixed) embedding vector associated with letter Sj . For each bit
+position ℓ ∈ {1, . . . , Lsecret }, we select the corresponding secret letter index by cycling through the four letters,
+
+                                                 j(ℓ) = 1 + ((ℓ − 1) mod 4).
+
+We then sample an independent seed σℓ′ , which defines a random hyperplane in embedding space via a normal vector
+vσℓ′ ∈ Rd (e.g., sampled from an isotropic distribution and normalized). Using a (possibly position-dependent) threshold τℓ ,
+we define the ℓ-th keystream bit as
+                                               h               i
+                                   kℓ (S) = 1 e⊤Sj(ℓ) vσℓ′ > τℓ ,      ℓ = 1, . . . , Lsecret .
+
+Collecting these bits yields k(S) = (k1 (S), . . . , kLsecret (S)) ∈ {0, 1}Lsecret , and bfinal is obtained by bitwise XOR with b.
+
+Intuition and role as a control. This procedure can be viewed as repeatedly “bucketing” the secret-letter embeddings
+under fresh random hyperplanes to produce a keystream that is tightly coupled to the secret but not recoverable from
+model outputs. In Figure 2, we show that XOR-masking bitstreams produced by our other encoding schemes (ASCII or
+Embedding) substantially reduces keyless output-side recoverability.
+
+Why this is not output-decodable. Unlike our exfiltration schemes, this XOR-masking control is intentionally not
+decodable from text alone: the transmitted bits correspond to bfinal , which does not permit recovery of b (and hence S)
+without k(S). However, to derive k(S) you require the orientation of 32 hyperplanes and S. This circularity ensures
+non-decodability. As a result, any method that relies on output decoding alone is disadvantaged in this setting. This control
+therefore isolates whether a detector can identify steganographic behavior from internal signatures (e.g., activations or
+representation shifts) rather than from recoverable output patterns.
+
+
+
+
+                                                                18
+
