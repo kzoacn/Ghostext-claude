@@ -1,0 +1,91 @@
+# Ghostext Paper Specification
+
+## Overview
+
+Write a research paper about Ghostext, an almost perfect steganography system that uses large language models and arithmetic coding to hide secret messages in generated text.
+
+## Paper Style Guidelines
+
+- **Language**: English throughout
+- **Format**: Write in natural language paragraphs. Avoid bullet points and numbered lists as much as possible.
+- **Tone**: Friendly and accessible. Use simple, clear vocabulary rather than overly complex academic jargon.
+- **Goal**: The paper should explain the system clearly while still being academically rigorous.
+
+## Title
+
+"Ghostext: an almost perfect steganography via large language model and arithmetic coding"
+
+(This title can be modified if you find a better alternative)
+
+## System Description
+
+Ghostext involves three parties: Alice, Bob, and Censor.
+
+Alice uses a prompt, a password, and a secret message to call the Ghostext system, which produces a cover text. When the censor Censor examines this text, they see nothing unusual - it passes through censorship undetected. Bob, using the same prompt and password, can recover the secret message from the text.
+
+## Security Model
+
+The security is defined against a passive censor who can observe the text itself but does not have knowledge of the prompt or password. The goal is that the censor cannot distinguish between text containing the hidden message and natural language text.
+
+Technically, this is achieved in two ways. First, the large language model produces a distribution that is close to natural language text. Second, the encryption process does not disrupt the model's next-token prediction distribution.
+
+## Technical Approach
+
+The system uses two main tools: encryption and arithmetic coding.
+
+Encryption makes the hidden message indistinguishable from random bits. This ciphertext serves as the source for selecting tokens from the next-token prediction distribution.
+
+Arithmetic coding fully exploits the entropy of the distribution, encoding the message completely into the model's token choices.
+
+The key claim is that this approach is "almost perfect" because it preserves the LLM's next-token prediction distribution without modification while maximizing entropy utilization. This makes the steganography scheme highly effective.
+
+## Related Work
+
+Research and reference:
+- LLM steganography papers
+- LLM watermarking papers (the underlying techniques are closely related)
+
+## Experiments
+
+Run experiments to demonstrate that the system works:
+- Use only the llm backend (the toy backend is purely for testing and should not appear in the paper)
+- Report basic data and parameters
+- Show round-trip success rates, bits per token, and timing information
+
+The Ghostext code in `../Ghostext` has both a toy backend and an llm backend. Only use the llm backend for the paper experiments.
+
+## Plan and Milestones
+
+After completing each milestone, save progress with:
+```bash
+git add .
+git commit -m "descriptive message"
+git push
+```
+
+### Milestone 1: Initial Investigation
+- Explore the Ghostext codebase to understand its structure
+- Run basic encode/decode tests to verify the system works
+- Collect initial statistics on capacity and performance
+
+### Milestone 2: Related Work Survey
+- Research LLM steganography papers
+- Research LLM watermarking papers
+- Summarize key techniques and how they relate to Ghostext
+
+### Milestone 3: First Draft
+- Write the introduction section
+- Write the system description
+- Write the security analysis
+- Write the technical approach section
+
+### Milestone 4: Experiments and Results
+- Run experiments with the llm backend
+- Collect and analyze data
+- Write the experiments section with results
+
+### Milestone 5: Conclusion and Final Polish
+- Write the conclusion
+- Review and refine the entire paper
+- Ensure no bullet points, natural language flow
+- Check vocabulary is simple and friendly
