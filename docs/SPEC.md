@@ -7,9 +7,80 @@ Write a research paper about Ghostext, an almost perfect steganography system th
 ## Paper Style Guidelines
 
 - **Language**: English throughout
-- **Format**: Write in natural language paragraphs. Avoid bullet points and numbered lists as much as possible.
+- **Format**: LaTeX following CCS 2026 conference format (ACM Master Article Template)
+- **Document Class**: Use `acmart` class with `sigconf,review,anonymous` options for double-blind review
 - **Tone**: Friendly and accessible. Use simple, clear vocabulary rather than overly complex academic jargon.
 - **Goal**: The paper should explain the system clearly while still being academically rigorous.
+
+### CCS 2026 LaTeX Format Requirements
+
+**Document Setup:**
+```latex
+\documentclass[sigconf,review,anonymous]{acmart}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{times}
+
+% For anonymity in double-blind review
+\ccsSubmissionID{12345}
+\ccsPaperID{1234}
+\ccsISBN{978-1-4503-XXXX-X/XX/YY}
+
+\begin{document}
+\title{Ghostext: An Almost Perfect Steganography via Large Language Model and Arithmetic Coding}
+% Remove author info for anonymous review
+\author{}
+\maketitle
+\begin{abstract}
+...
+\end{abstract}
+
+\section{Introduction}
+...
+
+\section{Related Work}
+...
+
+\section{System Description}
+...
+
+\section{Security Analysis}
+...
+
+\section{Technical Approach}
+...
+
+\section{Experiments}
+...
+
+\section{Conclusion}
+...
+
+\bibliographystyle{acmauthory}
+\begin{thebibliography}{references.bib}
+...
+\end{thebibliography}
+
+\end{document}
+```
+
+**Key Requirements:**
+- Use 10pt font size
+- Double-column format (acmart handles this automatically)
+- Page limit: 12 pages total (including references)
+- Use PDF/A format for final submission
+- Ensure all figures and tables are readable
+- Include keywords for indexing
+- Use ACM reference style (acmauthory)
+
+**Build Commands:**
+- `pdflatex paper.tex` - Generate PDF
+- `bibtex paper` - Generate bibliography
+
+**Template Availability:**
+- Download from: https://www.acm.org/publications/proceedings-template
+- File: `acmart.cls` must be in the same directory
 
 ## Title
 
@@ -84,8 +155,8 @@ git push
 - Collect and analyze data
 - Write the experiments section with results
 
-### Milestone 5: Conclusion and Final Polish
-- Write the conclusion
-- Review and refine the entire paper
-- Ensure no bullet points, natural language flow
-- Check vocabulary is simple and friendly
+### Milestone 5: LaTeX Conversion and Final Polish
+- Convert paper to CCS 2026 LaTeX format
+- Use acmart class with sigconf,review,anonymous options
+- Ensure all sections are properly formatted
+- Compile with pdflatex to verify PDF generation
